@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self'; font-src 'self'">
+  <title>guiTOP</title>
+  <link rel="stylesheet" href="../styles/main.css">
+</head>
+<body>
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="single">Single</button>
+    <button class="tab-btn" data-tab="multi">Multi</button>
+    <div class="skin-toggle">
+      <button class="skin-btn" data-skin="bars">Bars</button>
+      <button class="skin-btn" data-skin="gauges">Gauges</button>
+    </div>
+    <button id="manage-hosts-btn" class="add-host-btn">Manage Hosts</button>
+  </div>
+
+  <div id="manage-hosts-modal" class="modal-overlay" style="display:none">
+    <div class="modal-card" style="width:420px">
+      <div class="modal-title">Manage Hosts</div>
+      <div id="mh-list" class="mh-list"></div>
+      <hr style="margin:12px 0;border-color:var(--border-subtle, #333)">
+      <button id="mh-add-toggle" class="modal-btn submit" style="width:100%">+ Add Host</button>
+      <div id="mh-add-form" style="display:none">
+        <label class="modal-label">Hostname / IP
+          <input id="ah-host" class="modal-input" placeholder="192.168.50.100" />
+        </label>
+        <label class="modal-label">Username
+          <input id="ah-user" class="modal-input" placeholder="user" />
+        </label>
+        <label class="modal-label">Password
+          <input id="ah-pass" class="modal-input" type="password" placeholder="SSH password" />
+        </label>
+        <label class="modal-label">Port
+          <input id="ah-port" class="modal-input" type="number" value="22" min="1" max="65535" />
+        </label>
+        <label class="modal-label">Label (optional)
+          <input id="ah-label" class="modal-input" placeholder="auto from hostname" />
+        </label>
+        <div id="ah-error" class="modal-error" style="display:none"></div>
+        <div id="ah-fingerprint" class="modal-fingerprint" style="display:none">
+          <div class="fp-title">Unknown Host Key</div>
+          <div class="fp-hash" id="ah-fp-hash"></div>
+          <div class="fp-warning">Verify this fingerprint matches the remote host before accepting.</div>
+        </div>
+        <div class="modal-buttons">
+          <button id="ah-submit" class="modal-btn submit">Add</button>
+        </div>
+      </div>
+      <div class="modal-buttons" style="margin-top:12px">
+        <button id="mh-close" class="modal-btn cancel">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="panel-single" class="tab-panel active">
+    <select id="host-select" class="host-select"></select>
+    <div id="single-gpus" class="gpu-grid"></div>
+    <button id="single-proc-toggle" class="proc-toggle" style="display:none">Show Processes</button>
+    <div id="single-procs" style="display:none"></div>
+  </div>
+
+  <div id="panel-multi" class="tab-panel">
+    <div id="multi-hosts"></div>
+  </div>
+
+  <div class="status-bar">
+    <span id="status-text">Waiting for data...</span>
+  </div>
+
+  <script src="widgets/gpu-card.js"></script>
+  <script src="widgets/gpu-card-bars.js"></script>
+  <script src="widgets/process-table.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
