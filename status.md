@@ -1,6 +1,28 @@
 # guiTOP — Build Status / Session Handoff
 
-_Last updated: 2026-06-24. Read this + `CLAUDE.md` once at session start. Don't re-derive what's below._
+_Last updated: 2026-07-09. Read this + `CLAUDE.md` once at session start. Don't re-derive what's below._
+
+## Session 2026-07-09 — Multi-tab bars fix, GitHub, v0.1.2 build
+- **Multi tab bars bug FIXED.** Root cause: CSP `style-src 'self'` blocks inline `style=""`
+  attrs in innerHTML — bar widths set inline were ignored, `.bar-fill` (block div) defaulted to
+  100% width. Single tab only worked because its per-tick path used `GpuCardBars.update()`
+  (CSSOM `element.style`, CSP-safe). Multi rebuilt innerHTML every tick → never updated.
+- Fixes (all CSP-driven):
+  - `renderer.js renderMulti()`: rebuilds DOM only when structural signature changes
+    (hosts/status/gpu-count/skin, module var `multiSig`); per-tick data goes through update path.
+  - `renderer.js renderGpuCards()`: bars branch calls `GpuCardBars.update()` after full render.
+  - `gpu-card-bars.js`: dead inline width attrs removed.
+  - `gpu-card.js`: `border-top-color` now set in `drawGauges()` via JS (was inline attr, blocked).
+  - `.dim-note` CSS class replaces blocked inline dim styles (renderer.js ×2, main.css).
+  - NOTE: any future dynamic styling must go through `element.style`, never `style=""` in HTML.
+- **Dev endpoints** (main.js, port 17580): `/screenshot` (existing), NEW `/tab/single` +
+  `/tab/multi` (fixed-string executeJavaScript tab click) — enables self-verify of both tabs.
+- **GitHub**: repo created `https://github.com/an80sPWNstar/guiTOP` (private), git init + full
+  push on `main`. Repo identity set locally (Bryan Henson / bryan.henson@cinchit.com).
+  `.gitignore`: node_modules/, dist/, *.log.
+- **v0.1.2** built: `dist\guiTOP Setup 0.1.2.exe` (78 MB NSIS, unsigned — no cert).
+- Local LLM delegation: family-llm Qwen wrote renderMulti/renderGpuCards rewrite (629 in/766 out
+  tokens, 1 call, temp 0, thinking off); integrated with style adaptation.
 
 ## Where you are
 This project is developed on **Windows** (`bryan-dt`, E:\vs_code_projects\guiTOP). The remote
