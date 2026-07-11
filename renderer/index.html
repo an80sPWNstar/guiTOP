@@ -10,10 +10,11 @@
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="single">Single</button>
     <button class="tab-btn" data-tab="multi">Multi</button>
-    <div class="skin-toggle">
-      <button class="skin-btn" data-skin="bars">Bars</button>
-      <button class="skin-btn" data-skin="gauges">Gauges</button>
-    </div>
+    <select id="skin-select" class="skin-select">
+      <option value="bars">Bars</option>
+      <option value="gauges">Gauges</option>
+      <option value="corvette">C4 Corvette</option>
+    </select>
     <button id="manage-hosts-btn" class="add-host-btn">Manage Hosts</button>
   </div>
 
@@ -72,6 +73,7 @@
 
   <script src="widgets/gpu-card.js"></script>
   <script src="widgets/gpu-card-bars.js"></script>
+  <script src="widgets/gpu-card-corvette.js"></script>
   <script src="widgets/process-table.js"></script>
   <script src="renderer.js"></script>
 </body>

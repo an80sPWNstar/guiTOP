@@ -11,7 +11,11 @@ const state = {
   skin: localStorage.getItem('guitop-skin') || 'bars',
 }
 
-document.body.classList.toggle('skin-bars', state.skin === 'bars')
+function applySkinClass() {
+  document.body.classList.toggle('skin-bars', state.skin === 'bars')
+  document.body.classList.toggle('skin-corvette', state.skin === 'corvette')
+}
+applySkinClass()
 
 // ── Tab switching ───────────────────────────────
 const tabBtns = document.querySelectorAll('.tab-btn')
@@ -36,48 +40,38 @@ function activeTab() {
 }
 
 // ── Skin switching ─────────────────────────────
-const skinBtns = document.querySelectorAll('.skin-btn')
-skinBtns.forEach(btn => {
-  if (btn.dataset.skin === state.skin) btn.classList.add('active')
-  btn.addEventListener('click', () => {
-    skinBtns.forEach(b => b.classList.remove('active'))
-    btn.classList.add('active')
-    state.skin = btn.dataset.skin
-    localStorage.setItem('guitop-skin', state.skin)
-    document.body.classList.toggle('skin-bars', state.skin === 'bars')
-    document.getElementById('single-gpus').innerHTML = ''
-    document.getElementById('multi-hosts').innerHTML = ''
-    renderActive()
-  })
+const skinSelect = document.getElementById('skin-select')
+skinSelect.value = state.skin
+skinSelect.addEventListener('change', () => {
+  state.skin = skinSelect.value
+  localStorage.setItem('guitop-skin', state.skin)
+  applySkinClass()
+  document.getElementById('single-gpus').innerHTML = ''
+  document.getElementById('multi-hosts').innerHTML = ''
+  multiSig = ''
+  renderActive()
 })
 
+function skinModule() {
+  if (state.skin === 'corvette') return { mod: GpuCardCorvette, cls: '.corvette-card', upd: 'update' }
+  if (state.skin === 'bars') return { mod: GpuCardBars, cls: '.bar-card', upd: 'update' }
+  return { mod: GpuCard, cls: '.gpu-card', upd: 'drawGauges' }
+}
+
 function renderGpuCards(container, gpus, compact) {
-  if (state.skin === 'bars') {
-    const existing = container.querySelectorAll('.bar-card')
-    if (existing.length === gpus.length) {
-      gpus.forEach((g, i) => GpuCardBars.update(existing[i], g))
-    } else {
-      // CSP blocks inline style attrs — widths must be applied via update() after render
-      container.innerHTML = gpus.map(g => GpuCardBars.render(g, compact)).join('')
-      const cards = container.querySelectorAll('.bar-card')
-      gpus.forEach((g, i) => { if (cards[i]) GpuCardBars.update(cards[i], g) })
-    }
+  const { mod, cls, upd } = skinModule()
+  const existing = container.querySelectorAll(cls)
+  if (existing.length === gpus.length) {
+    gpus.forEach((g, i) => mod[upd](existing[i], g))
   } else {
-    const existing = container.querySelectorAll('.gpu-card')
-    if (existing.length === gpus.length) {
-      gpus.forEach((g, i) => GpuCard.drawGauges(existing[i], g))
-    } else {
-      container.innerHTML = gpus.map(g => GpuCard.render(g, compact)).join('')
-      const cards = container.querySelectorAll('.gpu-card')
-      gpus.forEach((g, i) => { if (cards[i]) GpuCard.drawGauges(cards[i], g) })
-    }
+    container.innerHTML = gpus.map(g => mod.render(g, compact)).join('')
+    const cards = container.querySelectorAll(cls)
+    gpus.forEach((g, i) => { if (cards[i]) mod[upd](cards[i], g) })
   }
 }
 
 function renderErrorCard(host, msg) {
-  return state.skin === 'bars'
-    ? GpuCardBars.renderError(host, msg)
-    : GpuCard.renderError(host, msg)
+  return skinModule().mod.renderError(host, msg)
 }
 
 // ── Host select (Single tab) ────────────────────

@@ -1,6 +1,24 @@
 /* guiTOP — Obsidian Glass theme */
 
 @font-face {
+  font-family: 'DSEG7-Classic';
+  src: url('../assets/fonts/dseg/DSEG7-Classic/DSEG7Classic-Bold.woff2') format('woff2'),
+       url('../assets/fonts/dseg/DSEG7-Classic/DSEG7Classic-Bold.ttf') format('truetype');
+  font-weight: 700;
+}
+@font-face {
+  font-family: 'DSEG14-Classic';
+  src: url('../assets/fonts/dseg/DSEG14-Classic/DSEG14Classic-Regular.woff2') format('woff2'),
+       url('../assets/fonts/dseg/DSEG14-Classic/DSEG14Classic-Regular.ttf') format('truetype');
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Share Tech Mono';
+  src: url('../assets/fonts/share-tech-mono/share-tech-mono-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+}
+
+@font-face {
   font-family: 'Orbitron';
   src: url('../assets/fonts/Orbitron-Variable.ttf') format('truetype');
   font-weight: 100 900;
@@ -618,36 +636,27 @@ body {
   z-index: 50;
 }
 
-/* ── Skin toggle ─────────────────────────────── */
-.skin-toggle {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 16px;
+/* ── Skin selector ───────────────────────────── */
+.skin-select {
   -webkit-app-region: no-drag;
-}
-
-.skin-btn {
-  background: none;
-  border: 1px solid transparent;
-  color: var(--text-dim);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 4px 8px;
   font-size: 10px;
   font-weight: 500;
-  padding: 4px 10px;
   cursor: pointer;
-  border-radius: 4px;
-  transition: color 0.2s, border-color 0.2s, background 0.2s;
+  margin-left: 16px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
   font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, color 0.2s;
 }
-
-.skin-btn:hover { color: var(--text-secondary); }
-
-.skin-btn.active {
-  color: var(--color-gpu);
-  border-color: rgba(76, 154, 255, 0.25);
-  background: rgba(76, 154, 255, 0.06);
+.skin-select:hover, .skin-select:focus {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
 }
 
 /* ── Bar card skin ──────────────────────────── */
@@ -837,3 +846,34 @@ body.skin-bars #panel-multi .gpu-grid {
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.14); }
+
+/* ── Corvette skin ───────────────────────────── */
+.corvette-card-error {
+  background: #0a0805;
+  border: 1px solid rgba(255, 46, 62, 0.3);
+  border-radius: 12px;
+  box-shadow: inset 3px 0 0 #ff2e3e;
+  padding: 22px 24px;
+}
+.corvette-card-error .cv-header { display: flex; align-items: center; margin-bottom: 14px; }
+.corvette-card-error .cv-idx-badge {
+  width: 26px; height: 26px; border-radius: 7px;
+  background: rgba(255,46,62,0.15); border: 1px solid rgba(255,46,62,0.4);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Orbitron', monospace; font-size: 14px; font-weight: 700; color: #ff2e3e;
+}
+.corvette-card-error .cv-name-block { margin-left: 10px; }
+.corvette-card-error .cv-gpu-name {
+  font-family: 'Rajdhani', sans-serif; font-size: 16px; font-weight: 700; color: #ff2e3e;
+}
+.cv-error-msg {
+  color: #ff8a1e; font-size: 12px; line-height: 1.5; opacity: 0.85; word-break: break-word;
+}
+
+/* ── Corvette skin grid overrides ────────────── */
+body.skin-corvette .gpu-grid {
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+}
+body.skin-corvette #panel-multi .gpu-grid {
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+}
