@@ -47,8 +47,8 @@ function createWindow() {
   win = new BrowserWindow({
     width: 960,
     height: 680,
-    minWidth: 640,
-    minHeight: 400,
+    minWidth: 320,
+    minHeight: 200,
     webPreferences: {
       preload: PRELOAD,
       contextIsolation: true,
@@ -230,6 +230,37 @@ app.whenReady().then(() => {
         res.writeHead(500, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: false, error: String(err) }))
       }
+    } else if ((req.url === '/skin/gauges' || req.url === '/skin/bars' || req.url === '/skin/corvette') && win && !win.isDestroyed()) {
+      const skin = req.url.split('/')[2]
+      try {
+        await win.webContents.executeJavaScript(
+          `(() => { const s = document.getElementById('skin-select'); s.value = '${skin}'; s.dispatchEvent(new Event('change')); })()`)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, skin }))
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: String(err) }))
+      }
+    } else if (req.url === '/debug/gauges' && win && !win.isDestroyed()) {
+      try {
+        const info = await win.webContents.executeJavaScript(
+          `(() => Array.from(document.querySelectorAll('.gauge-util')).map(c => ({
+            visible: !!c.offsetParent, cw: c.clientWidth, ch: c.clientHeight,
+            bw: c.width, bh: c.height, dpr: window.devicePixelRatio
+          })))()`)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, info }))
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: String(err) }))
+      }
+    } else if (req.url.startsWith('/resize') && win && !win.isDestroyed()) {
+      const params = new URL(req.url, 'http://localhost').searchParams
+      const w = parseInt(params.get('w')) || 500
+      const h = parseInt(params.get('h')) || 400
+      win.setSize(w, h)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, width: w, height: h }))
     } else if (req.url === '/screenshot' && win && !win.isDestroyed()) {
       try {
         const img = await win.webContents.capturePage()

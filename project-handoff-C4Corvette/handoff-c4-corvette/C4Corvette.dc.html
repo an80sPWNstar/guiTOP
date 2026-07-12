@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/dseg@0.46.0/css/dseg.css" rel="stylesheet">
+  <style>
+    body { margin:0; background:#050505; }
+    a { color:#ffb000; }
+    a:hover { color:#ffce54; }
+  </style>
+</helmet>
+
+<div style="min-height:100vh;background:#050505;padding:28px 32px 40px;font-family:'Segoe UI',sans-serif;box-sizing:border-box;">
+  <!-- HEADER -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:16px;">
+    <div style="display:flex;align-items:baseline;gap:12px;">
+      <span style="font-family:'Orbitron',sans-serif;font-weight:900;font-size:26px;letter-spacing:1px;color:#ffb000;text-shadow:0 0 14px rgba(255,176,0,0.45);">guiTOP</span>
+      <span style="font-family:'Share Tech Mono',monospace;font-size:12px;letter-spacing:3px;color:rgba(255,176,0,0.55);">80'S C4 CORVETTE</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div style="display:flex;gap:2px;background:rgba(255,176,0,0.06);border:1px solid rgba(255,176,0,0.2);border-radius:9px;padding:3px;">
+        <div onClick="{{ setTabSingle }}" style="cursor:pointer;padding:6px 16px;border-radius:6px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:0.8px;color:{{ tabSingleColor }};background:{{ tabSingleBg }};">SINGLE HOST</div>
+        <div onClick="{{ setTabMulti }}" style="cursor:pointer;padding:6px 16px;border-radius:6px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:0.8px;color:{{ tabMultiColor }};background:{{ tabMultiBg }};">ALL HOSTS</div>
+      </div>
+      <sc-if value="{{ isSingle }}" hint-placeholder-val="{{ true }}">
+        <select onChange="{{ handleHostChange }}" value="{{ singleHost }}" style="background:#0d0a04;color:#ffae1a;border:1px solid rgba(255,176,0,0.3);border-radius:7px;padding:7px 12px;font-family:'Share Tech Mono',monospace;font-size:12px;letter-spacing:1px;">
+          <sc-for list="{{ hostOptions }}" as="h" hint-placeholder-count="2">
+            <option value="{{ h }}">{{ h }}</option>
+          </sc-for>
+        </select>
+      </sc-if>
+    </div>
+  </div>
+
+  <!-- CARD GRID -->
+  <sc-for list="{{ displayHosts }}" as="host" hint-placeholder-count="1">
+    <sc-if value="{{ isMulti }}" hint-placeholder-val="{{ false }}">
+      <div style="font-family:'Share Tech Mono',monospace;font-size:12px;letter-spacing:2px;color:rgba(255,176,0,0.6);margin:6px 0 12px;">{{ host.label }}</div>
+    </sc-if>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax({{ gridMinWidth }}, 1fr));gap:16px;margin-bottom:20px;">
+      <sc-for list="{{ host.gpus }}" as="gpu" hint-placeholder-count="2">
+        <div style="background:#0a0805;border:1px solid rgba(255,176,0,0.22);border-radius:12px;padding:22px 24px;box-shadow:inset 3px 0 0 #ffb000;">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:26px;height:26px;border-radius:7px;background:rgba(255,176,0,0.08);border:1px solid rgba(255,176,0,0.25);display:flex;align-items:center;justify-content:center;font-family:'Orbitron',monospace;font-size:11px;font-weight:700;color:#ffb000;">{{ gpu.index }}</div>
+              <div>
+                <div style="font-family:'Rajdhani',sans-serif;font-size:16px;font-weight:700;color:rgba(255,240,220,0.95);line-height:1.1;">{{ gpu.name }}</div>
+                <div style="font-size:10px;color:rgba(255,176,0,0.5);letter-spacing:0.5px;margin-top:2px;">{{ gpu.host }}</div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:16px;margin-bottom:16px;align-items:stretch;">
+            <div style="display:flex;gap:8px;flex:1;min-width:0;">
+              <div style="display:flex;flex-direction:column;justify-content:space-between;align-self:stretch;min-height:200px;padding:1px 0;">
+                <span style="font-size:9px;color:rgba(255,174,26,0.55);font-family:'Share Tech Mono',monospace;line-height:1;">100</span>
+                <span style="font-size:9px;color:rgba(255,174,26,0.55);font-family:'Share Tech Mono',monospace;line-height:1;">80</span>
+                <span style="font-size:9px;color:rgba(255,174,26,0.55);font-family:'Share Tech Mono',monospace;line-height:1;">60</span>
+                <span style="font-size:9px;color:rgba(255,174,26,0.55);font-family:'Share Tech Mono',monospace;line-height:1;">40</span>
+                <span style="font-size:9px;color:rgba(255,174,26,0.55);font-family:'Share Tech Mono',monospace;line-height:1;">20</span>
+                <span style="font-size:9px;color:rgba(255,174,26,0.55);font-family:'Share Tech Mono',monospace;line-height:1;">0</span>
+              </div>
+              <div style="position:relative;flex:1;display:flex;flex-direction:column-reverse;gap:3px;align-self:stretch;min-height:200px;align-items:flex-start;background:rgba(0,0,0,0.4);border-radius:5px;padding:6px 8px;box-sizing:border-box;box-shadow:inset 0 1px 4px rgba(0,0,0,0.7);">
+                <sc-for list="{{ gpu.utilWedge }}" as="seg" hint-placeholder-count="24">
+                  <div style="width:{{ seg.widthPct }}%;flex:1;min-height:0;background:{{ seg.bg }};box-shadow:{{ seg.glow }};border-radius:0 2px 2px 0;"></div>
+                </sc-for>
+                <div style="position:absolute;right:6px;bottom:6px;background:#180c0c;border:2px solid #7a4a10;border-radius:6px;padding:4px 12px 5px;box-shadow:inset 0 0 14px rgba(255,140,0,0.28);text-align:center;">
+                  <div style="font-family:'Share Tech Mono',monospace;font-size:8px;font-weight:400;letter-spacing:2px;color:#ff8a1e;text-shadow:0 0 8px rgba(255,138,30,0.7);margin-bottom:3px;padding-left:2px;">GPU LOAD</div>
+                  <div style="height:1px;background:linear-gradient(90deg,transparent,rgba(255,138,30,0.5),transparent);margin-bottom:4px;"></div>
+                  <div style="display:flex;align-items:flex-start;justify-content:center;gap:3px;">
+                    <span style="font-family:'DSEG7-Classic','Share Tech Mono',monospace;font-size:30px;font-weight:700;color:#ffae1a;text-shadow:0 0 14px rgba(255,174,26,0.75);line-height:1;">{{ gpu.utilPct }}</span>
+                    <span style="font-family:'Share Tech Mono',monospace;font-size:12px;color:#ffae1a;margin-top:2px;">%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;justify-content:space-between;align-items:stretch;gap:10px;width:152px;flex-shrink:0;padding-bottom:6px;box-sizing:border-box;">
+              <!-- C4 COOLANT-TEMP-STYLE GPU TEMP MODULE -->
+              <div style="background:#0d0a04;border:2px solid #6a4a10;border-radius:8px;padding:8px 10px;box-shadow:inset 0 0 14px rgba(255,140,0,0.18);">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div style="display:flex;flex-direction:column-reverse;gap:2px;height:44px;width:9px;background:rgba(0,0,0,0.5);border-radius:2px;padding:2px;box-sizing:border-box;flex-shrink:0;">
+                    <sc-for list="{{ gpu.tempColSeg }}" as="s" hint-placeholder-count="8">
+                      <div style="flex:1;background:{{ s.bg }};box-shadow:{{ s.glow }};border-radius:1px;"></div>
+                    </sc-for>
+                  </div>
+                  <div style="display:flex;align-items:flex-start;gap:2px;flex:1;justify-content:center;">
+                    <span style="font-family:'DSEG7-Classic','Share Tech Mono',monospace;font-size:32px;font-weight:700;color:#ffae1a;text-shadow:0 0 13px rgba(255,174,26,0.7);line-height:1;">{{ gpu.tempNum }}</span>
+                    <span style="font-family:'Share Tech Mono',monospace;font-size:11px;color:#ffae1a;margin-top:1px;">&deg;C</span>
+                  </div>
+                  <svg width="20" height="15" viewBox="0 0 24 18" style="flex-shrink:0;">
+                    <path d="M2 6 q3 -4 6 0 t6 0 t6 0" stroke="#ff8a1e" stroke-width="1.8" fill="none"></path>
+                    <path d="M2 12 q3 -4 6 0 t6 0 t6 0" stroke="#ff8a1e" stroke-width="1.8" fill="none"></path>
+                  </svg>
+                </div>
+                <div style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:2px;color:#ff8a1e;text-shadow:0 0 8px rgba(255,138,30,0.6);text-align:center;margin-top:6px;">GPU TEMP</div>
+              </div>
+              <!-- C4 FUEL-STYLE STATUS GAUGE -->
+              <div style="background:#0d0a04;border:2px solid #6a4a10;border-radius:8px;padding:8px 12px;box-shadow:inset 0 0 14px rgba(255,140,0,0.13);">
+                <div style="display:flex;gap:8px;justify-content:center;">
+                  <div style="display:flex;flex-direction:column-reverse;gap:2px;height:84px;width:42px;background:rgba(0,0,0,0.5);border-radius:3px;padding:3px;box-sizing:border-box;box-shadow:inset 0 1px 3px rgba(0,0,0,0.7);">
+                    <sc-for list="{{ gpu.fuelSeg }}" as="s" hint-placeholder-count="14">
+                      <div style="flex:1;background:{{ s.bg }};box-shadow:{{ s.glow }};border-radius:1px;"></div>
+                    </sc-for>
+                  </div>
+                  <div style="display:flex;flex-direction:column;justify-content:space-between;padding:1px 0;">
+                    <span style="font-family:'DSEG14-Classic','Share Tech Mono',monospace;font-size:10px;color:#ffae1a;">F</span>
+                    <span style="font-family:'Share Tech Mono',monospace;font-size:15px;font-weight:700;color:#ffae1a;line-height:1;">&frac12;</span>
+                    <span style="font-family:'DSEG14-Classic','Share Tech Mono',monospace;font-size:10px;color:#ffae1a;">E</span>
+                  </div>
+                </div>
+                <div style="font-family:'DSEG14-Classic','Share Tech Mono',monospace;font-size:9px;letter-spacing:1px;color:{{ gpu.stateColor }};text-shadow:{{ gpu.stateGlow }};text-align:center;margin-top:7px;">{{ gpu.statusLabel }}</div>
+              </div>
+            </div>
+          </div>
+          <div style="height:1px;background:rgba(255,176,0,0.12);margin-bottom:14px;"></div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:9px;">
+            <span style="font-size:11px;font-weight:700;color:rgba(255,176,0,0.6);text-transform:uppercase;letter-spacing:0.5px;width:36px;flex-shrink:0;font-family:'Rajdhani',sans-serif;">VRAM</span>
+            <div style="flex:1;display:flex;gap:2px;height:13px;background:rgba(0,0,0,0.4);border-radius:3px;padding:2px 3px;box-sizing:border-box;box-shadow:inset 0 1px 3px rgba(0,0,0,0.6);">
+              <sc-for list="{{ gpu.vramSeg }}" as="seg" hint-placeholder-count="30">
+                <div style="flex:1;background:{{ seg.bg }};box-shadow:{{ seg.glow }};border-radius:1px;"></div>
+              </sc-for>
+            </div>
+            <span style="font-size:11px;color:rgba(255,240,220,0.7);min-width:112px;text-align:right;font-family:'Share Tech Mono',monospace;">{{ gpu.vramStr }}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:11px;font-weight:700;color:rgba(255,176,0,0.6);text-transform:uppercase;letter-spacing:0.5px;width:36px;flex-shrink:0;font-family:'Rajdhani',sans-serif;">PWR</span>
+            <div style="flex:1;display:flex;gap:2px;height:13px;background:rgba(0,0,0,0.4);border-radius:3px;padding:2px 3px;box-sizing:border-box;box-shadow:inset 0 1px 3px rgba(0,0,0,0.6);">
+              <sc-for list="{{ gpu.powerSeg }}" as="seg" hint-placeholder-count="30">
+                <div style="flex:1;background:{{ seg.bg }};box-shadow:{{ seg.glow }};border-radius:1px;"></div>
+              </sc-for>
+            </div>
+            <span style="font-size:11px;color:rgba(255,240,220,0.7);min-width:112px;text-align:right;font-family:'Share Tech Mono',monospace;">{{ gpu.powerStr }}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { activeTab: 'single', singleHost: 'FAMILY-LLM' };
+
+  // Generic vertical segmented column. stops = [{from, c, gc}] sorted by `from` (0-1 fraction).
+  col(pct, stops, count) {
+    count = count || 18;
+    const litThresh = Math.max(0, Math.min(100, pct)) / 100 * count;
+    const arr = [];
+    for (let i = 0; i < count; i++) {
+      const frac = (i + 1) / count;
+      let pick = stops[0];
+      for (const s of stops) { if (frac > s.from) pick = s; }
+      const lit = (i + 1) <= litThresh;
+      arr.push({ bg: lit ? pick.c : 'rgba(255,255,255,0.07)', glow: lit ? ('0 0 7px ' + pick.gc + ', 0 0 2px ' + pick.gc) : 'none' });
+    }
+    return arr;
+  }
+
+  // Curved C4 bar-graph load wedge: 24 bars, position-colored green->amber->orange->red.
+  wedgeSegments(pct, count) {
+    count = count || 24;
+    const litThresh = Math.max(0, Math.min(100, pct)) / 100 * count;
+    const arr = [];
+    for (let i = 0; i < count; i++) {
+      const level = i + 1;
+      const t = (level - 1) / (count - 1);
+      const widthPct = (14 + 86 * Math.pow(t, 1.6)).toFixed(1);
+      const lit = level <= litThresh;
+      const color = t > 0.85 ? '#ff2e3e' : t > 0.70 ? '#ff8a1e' : t > 0.45 ? '#ffcc00' : '#2ecc40';
+      const unlit = t > 0.85 ? 'rgba(74,20,20,0.5)' : 'rgba(255,255,255,0.07)';
+      arr.push({ widthPct, bg: lit ? color : unlit, glow: lit ? ('0 0 8px ' + color + 'aa') : 'none' });
+    }
+    return arr;
+  }
+
+  // Horizontal LED bar (VRAM/PWR) with amber->orange->red threshold escalation at high fill.
+  segBar(pct, color, count, glowColor) {
+    count = count || 30;
+    glowColor = glowColor || color;
+    const litThresh = Math.max(0, Math.min(100, pct)) / 100 * count;
+    const arr = [];
+    for (let i = 0; i < count; i++) {
+      const frac = (i + 1) / count;
+      let c = color, gc = glowColor;
+      if (frac > 0.90) { c = '#ff2e3e'; gc = '#ff5a68'; }
+      else if (frac > 0.82) { c = '#ff5a1e'; gc = '#ff8a4a'; }
+      else if (frac > 0.72) { c = '#ff9a2e'; gc = '#ffb85a'; }
+      const lit = (i + 1) <= litThresh;
+      arr.push({ bg: lit ? c : 'rgba(255,255,255,0.07)', glow: lit ? ('0 0 7px ' + gc + ', 0 0 2px ' + gc) : 'none' });
+    }
+    return arr;
+  }
+
+  enrichGpu(g) {
+    const vramUsedGB = (g.memoryUsed / 1024).toFixed(1);
+    const vramTotalGB = Math.round(g.memoryTotal / 1024);
+    const vramPct = Math.round((g.memoryUsed / g.memoryTotal) * 100);
+    const powerPct = Math.round((g.powerDraw / g.powerLimit) * 100);
+    const statusLabel = g.utilization >= 85 ? 'HIGH LOAD' : g.utilization >= 50 ? 'ACTIVE' : 'IDLE';
+    return Object.assign({}, g, {
+      utilPct: g.utilization,
+      tempNum: String(g.temperature),
+      vramStr: vramUsedGB + ' / ' + vramTotalGB + ' GB',
+      powerStr: Math.round(g.powerDraw) + ' / ' + g.powerLimit + ' W',
+      vramPct, powerPct, statusLabel,
+      utilWedge: this.wedgeSegments(g.utilization, 24),
+      vramSeg: this.segBar(vramPct, '#2ecc40', 30, '#5fe870'),
+      powerSeg: this.segBar(powerPct, '#c8a018', 30, '#e6c04a'),
+      tempColSeg: this.col(Math.min(100, Math.round(g.temperature)), [{from:-1,c:'#ff3b30',gc:'#ff6a5a'}], 8),
+      fuelSeg: this.col(g.utilization, [{from:-1,c:'#2ecc40',gc:'#5fe870'},{from:0.88,c:'#ff2e3e',gc:'#ff5a68'}], 14),
+      stateColor: (g.utilization >= 50) ? '#ffb000' : '#5a5030',
+      stateGlow: (g.utilization >= 50) ? '0 0 9px rgba(255,176,0,0.75)' : 'none',
+    });
+  }
+
+  getHostsRaw() {
+    return [
+      { label: 'FAMILY-LLM', gpus: [
+        { index: 0, name: 'Tesla P100-PCIE-16GB', host: 'FAMILY-LLM', utilization: 78, memoryUsed: 14438, memoryTotal: 16384, temperature: 71, powerDraw: 210, powerLimit: 250, fanSpeed: null, clockSm: 1328 },
+        { index: 1, name: 'Tesla P100-PCIE-16GB', host: 'FAMILY-LLM', utilization: 45, memoryUsed: 8397, memoryTotal: 16384, temperature: 58, powerDraw: 140, powerLimit: 250, fanSpeed: null, clockSm: 1252 },
+        { index: 2, name: 'Tesla P100-PCIE-16GB', host: 'FAMILY-LLM', utilization: 12, memoryUsed: 2150, memoryTotal: 16384, temperature: 41, powerDraw: 55, powerLimit: 250, fanSpeed: null, clockSm: 1075 },
+      ] },
+      { label: 'BRYAN-DT', gpus: [
+        { index: 0, name: 'GeForce RTX 4090', host: 'BRYAN-DT', utilization: 92, memoryUsed: 22016, memoryTotal: 24576, temperature: 76, powerDraw: 410, powerLimit: 450, fanSpeed: 68, clockSm: 2520 },
+        { index: 1, name: 'GeForce RTX 3080', host: 'BRYAN-DT', utilization: 34, memoryUsed: 6349, memoryTotal: 10240, temperature: 52, powerDraw: 180, powerLimit: 320, fanSpeed: 42, clockSm: 1830 },
+      ] },
+    ];
+  }
+
+  setTabSingle = () => { this.setState({ activeTab: 'single' }); };
+  setTabMulti = () => { this.setState({ activeTab: 'multi' }); };
+  handleHostChange = (e) => { this.setState({ singleHost: e.target.value }); };
+
+  renderVals() {
+    const hostsRaw = this.getHostsRaw();
+    const enriched = hostsRaw.map(h => ({ label: h.label, gpus: h.gpus.map(g => this.enrichGpu(g)) }));
+    const isSingle = this.state.activeTab === 'single';
+    const displayHosts = isSingle ? enriched.filter(h => h.label === this.state.singleHost) : enriched;
+    const accent = '#FFB000';
+    return {
+      isSingle, isMulti: !isSingle,
+      setTabSingle: this.setTabSingle, setTabMulti: this.setTabMulti, handleHostChange: this.handleHostChange,
+      displayHosts, hostOptions: hostsRaw.map(h => h.label), singleHost: this.state.singleHost,
+      gridMinWidth: isSingle ? '380px' : '300px',
+      tabSingleColor: isSingle ? '#050505' : 'rgba(255,176,0,0.6)',
+      tabMultiColor: isSingle ? 'rgba(255,176,0,0.6)' : '#050505',
+      tabSingleBg: isSingle ? accent : 'transparent',
+      tabMultiBg: isSingle ? 'transparent' : accent,
+    };
+  }
+}
+</script>
+</body>
+</html>

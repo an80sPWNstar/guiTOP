@@ -36,8 +36,6 @@ const GpuCard = (() => {
     const pw = Math.round(cssW * dpr), ph = Math.round(cssH * dpr)
     if (canvas.width !== pw || canvas.height !== ph) {
       canvas.width = pw; canvas.height = ph
-      canvas.style.width = cssW + 'px'
-      canvas.style.height = cssH + 'px'
     }
     const ctx = canvas.getContext('2d')
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -65,8 +63,17 @@ const GpuCard = (() => {
     const s = size, cx = s / 2, cy = s / 2, r = s / 2 - 6
     const startAngle = Math.PI * 0.75
     const endAngle = Math.PI * 2.25
+
+    // Whole-number scale: always 6 divisions (step = multiple of 5) so every
+    // gauge has the same label count; dial top extends to the next multiple.
+    // Exception: a range that divides evenly on fewer steps (e.g. 0-100 by 20).
+    const range = max - min
+    const step = Math.max(5, Math.ceil(range / 6 / 5) * 5)
+    const numMajor = range % step === 0 ? range / step : 6
+    const gaugeMax = min + numMajor * step
+
     const v = value != null ? value : 0
-    const pct = clamp01((v - min) / (max - min))
+    const pct = clamp01((v - min) / (gaugeMax - min))
     const valAngle = startAngle + pct * (endAngle - startAngle)
 
     // Chrome outer ring
@@ -103,7 +110,6 @@ const GpuCard = (() => {
     }
 
     // Ticks + scale numbers
-    const numMajor = 8
     for (let i = 0; i <= numMajor * 5; i++) {
       const a = startAngle + (i / (numMajor * 5)) * (endAngle - startAngle)
       const isMajor = i % 5 === 0
@@ -112,7 +118,7 @@ const GpuCard = (() => {
         cx + Math.cos(a) * inner, cy + Math.sin(a) * inner,
         isMajor ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.25)', isMajor ? 1.8 : 0.8)
       if (isMajor) {
-        const tv = Math.round(min + (i / (numMajor * 5)) * (max - min))
+        const tv = Math.round(min + (i / 5) * step)
         textDraw(ctx, tv, cx + Math.cos(a) * (r - 46), cy + Math.sin(a) * (r - 46),
           'rgba(255,255,255,0.75)', `600 ${Math.round(s * 0.085)}px Rajdhani, sans-serif`)
       }
@@ -152,7 +158,9 @@ const GpuCard = (() => {
       side = 'left',
     } = opts
 
-    const w = SIDE_W, h = SIDE_H
+    // CSS (container query clamp) drives layout size; draw at that size
+    const w = canvas.clientWidth || SIDE_W
+    const h = Math.round(w * SIDE_H / SIDE_W)
     const ctx = prepareCanvas(canvas, w, h)
     const cy = h / 2
     const r = h / 2 - 10
@@ -163,7 +171,9 @@ const GpuCard = (() => {
 
     const startAngle = side === 'left' ? Math.PI / 2 : -Math.PI / 2
     const endAngle = startAngle + Math.PI
-    const valAngle = startAngle + pct * Math.PI
+    // Needle climbs upward on both sides: left sweeps clockwise from the
+    // bottom, right sweeps counterclockwise from the bottom
+    const valAngle = side === 'left' ? startAngle + pct * Math.PI : endAngle - pct * Math.PI
 
     // Chrome bezel
     const chrome = ctx.createLinearGradient(0, cy - r, w, cy + r)
@@ -193,10 +203,11 @@ const GpuCard = (() => {
     // Track arc (25% thicker: 3 → 3.75)
     arcStroke(ctx, cx, cy, r - 8, startAngle, endAngle, 'rgba(255,255,255,0.06)', 3.75, 'round')
 
-    // Value arc with glow (25% thicker)
+    // Value arc with glow (25% thicker) — always lit from the bottom anchor
     if (pct > 0.005) {
       ctx.shadowColor = accentColor; ctx.shadowBlur = 8
-      arcStroke(ctx, cx, cy, r - 8, startAngle, valAngle, accentColor, 3.75, 'round')
+      if (side === 'left') arcStroke(ctx, cx, cy, r - 8, startAngle, valAngle, accentColor, 3.75, 'round')
+      else arcStroke(ctx, cx, cy, r - 8, valAngle, endAngle, accentColor, 3.75, 'round')
       ctx.shadowBlur = 0
     }
 
@@ -210,14 +221,16 @@ const GpuCard = (() => {
         isMajor ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.2)', isMajor ? 1.2 : 0.6)
     }
 
-    // Start / end labels — well clear of inner gauge bezel
+    // Start / end labels — start at the bottom, end at the top on both sides
     const lr = r - 42
     const sOff = 0.38
+    const startLblAngle = side === 'left' ? startAngle + sOff : endAngle - sOff
+    const endLblAngle = side === 'left' ? endAngle - sOff : startAngle + sOff
     textDraw(ctx, labelStart,
-      cx + Math.cos(startAngle + sOff) * lr, cy + Math.sin(startAngle + sOff) * lr,
+      cx + Math.cos(startLblAngle) * lr, cy + Math.sin(startLblAngle) * lr,
       'rgba(255,255,255,0.75)', `700 ${Math.round(r * 0.28)}px Rajdhani, sans-serif`)
     textDraw(ctx, labelEnd,
-      cx + Math.cos(endAngle - sOff) * lr, cy + Math.sin(endAngle - sOff) * lr,
+      cx + Math.cos(endLblAngle) * lr, cy + Math.sin(endLblAngle) * lr,
       'rgba(255,255,255,0.75)', `700 ${Math.round(r * 0.28)}px Rajdhani, sans-serif`)
 
     // Needle — thicker
@@ -241,11 +254,26 @@ const GpuCard = (() => {
     return el.innerHTML
   }
 
+  // Smooth teal → yellow → red scale; frac 0..0.5 = cool→warn, 0.5..1 = warn→crit
+  function heatColor(frac) {
+    const f = Math.max(0, Math.min(1, frac))
+    const stops = [[0, 212, 170], [255, 200, 87], [255, 71, 87]]
+    const seg = f < 0.5 ? 0 : 1
+    const t = (f - seg * 0.5) / 0.5
+    const c0 = stops[seg], c1 = stops[seg + 1]
+    const ch = i => Math.round(c0[i] + (c1[i] - c0[i]) * t)
+    return `rgb(${ch(0)}, ${ch(1)}, ${ch(2)})`
+  }
+
+  // Map a value onto heatColor: warn threshold = mid (yellow), crit = full (red)
+  function heatFrac(value, warn, crit) {
+    if (value == null) return 1
+    if (value <= warn) return (value / warn) * 0.5
+    return 0.5 + Math.min(1, (value - warn) / (crit - warn)) * 0.5
+  }
+
   function tempColor(t) {
-    if (t == null) return '#FF4757'
-    if (t < 45) return '#00D4AA'
-    if (t < 65) return '#FFC857'
-    return '#FF4757'
+    return heatColor(heatFrac(t, 60, 82))
   }
 
   function utilColor(u) {
@@ -297,7 +325,7 @@ const GpuCard = (() => {
         min: 0, max: 100,
         label: 'GPU LOAD', unit: '%',
         accentColor: utilColor(gpu.utilization),
-        size: MAIN_SIZE,
+        size: utilCanvas.clientWidth || MAIN_SIZE,
       })
     }
 
@@ -310,14 +338,14 @@ const GpuCard = (() => {
         min: 0, max: gpu.powerLimit || 350,
         label: 'POWER', unit: 'W',
         accentColor: powColor,
-        size: MAIN_SIZE,
+        size: powerCanvas.clientWidth || MAIN_SIZE,
       })
     }
 
     if (vramCanvas) {
       const memPct = gpu.memoryUsed != null && gpu.memoryTotal
         ? gpu.memoryUsed / gpu.memoryTotal : 0
-      const memColor = memPct > 0.9 ? '#FF4757' : memPct > 0.7 ? '#FFC857' : '#F5A623'
+      const memColor = heatColor(heatFrac(memPct, 0.7, 0.95))
       drawSideGauge(vramCanvas, {
         value: gpu.memoryUsed,
         min: 0, max: gpu.memoryTotal || 1,

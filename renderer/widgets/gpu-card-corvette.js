@@ -65,12 +65,14 @@ const GpuCardCorvette = (() => {
                   <span data-role="temp-num">—</span>
                   <span data-role="temp-unit">&deg;C</span>
                 </div>
+              </div>
+              <div class="cv-temp-label-row">
+                <div class="cv-temp-label">TEMP</div>
                 <svg class="cv-coolant-svg" width="20" height="15" viewBox="0 0 24 18">
                   <path d="M2 6 q3 -4 6 0 t6 0 t6 0" fill="none"></path>
                   <path d="M2 12 q3 -4 6 0 t6 0 t6 0" fill="none"></path>
                 </svg>
               </div>
-              <div class="cv-temp-label">TEMP</div>
             </div>
             <div class="cv-fuel-module">
               <div class="cv-fuel-inner">
@@ -79,7 +81,7 @@ const GpuCardCorvette = (() => {
                 </div>
                 <div class="cv-fuel-markers">
                   <span class="cv-fuel-f-row"><span data-role="fuel-f">F</span><span data-role="fuel-max-gb"></span></span>
-                  <span data-role="fuel-half">&frac12;</span>
+                  <span data-role="fuel-half">1/2</span>
                   <span data-role="fuel-e">E</span>
                 </div>
               </div>
@@ -139,7 +141,7 @@ const GpuCardCorvette = (() => {
     cardEl.style.border = '1px solid rgba(255,176,0,0.22)'
     cardEl.style.borderRadius = '12px'
     cardEl.style.boxShadow = 'inset 3px 0 0 #ffb000'
-    cardEl.style.padding = cardEl.classList.contains('compact') ? '14px 16px' : '22px 24px'
+    cardEl.style.padding = cardEl.classList.contains('compact') ? '10px 12px' : '16px 18px'
 
     // Header
     const idxEl = cardEl.querySelector('[data-role="idx"]')
@@ -213,7 +215,7 @@ const GpuCardCorvette = (() => {
       wedge.style.flexDirection = 'column-reverse'
       wedge.style.gap = '3px'
       wedge.style.alignSelf = 'stretch'
-      wedge.style.minHeight = '200px'
+      wedge.style.minHeight = '0'
       wedge.style.alignItems = 'flex-start'
       wedge.style.background = 'rgba(0,0,0,0.4)'
       wedge.style.borderRadius = '5px'
@@ -259,7 +261,7 @@ const GpuCardCorvette = (() => {
     if (utilPctEl) {
       utilPctEl.textContent = util != null ? Math.round(util) : '—'
       utilPctEl.style.fontFamily = "'DSEG7-Classic', 'Share Tech Mono', monospace"
-      utilPctEl.style.fontSize = '30px'
+      utilPctEl.style.fontSize = '24px'
       utilPctEl.style.fontWeight = '700'
       utilPctEl.style.color = '#ffae1a'
       utilPctEl.style.textShadow = '0 0 14px rgba(255,174,26,0.75)'
@@ -290,7 +292,7 @@ const GpuCardCorvette = (() => {
       scale.style.flexDirection = 'column'
       scale.style.justifyContent = 'space-between'
       scale.style.alignSelf = 'stretch'
-      scale.style.minHeight = '200px'
+      scale.style.minHeight = '0'
       scale.style.padding = '1px 0'
     }
 
@@ -298,8 +300,8 @@ const GpuCardCorvette = (() => {
     const body = cardEl.querySelector('.cv-body')
     if (body) {
       body.style.display = 'flex'
-      body.style.gap = '16px'
-      body.style.marginBottom = '16px'
+      body.style.gap = '10px'
+      body.style.marginBottom = '10px'
       body.style.alignItems = 'stretch'
     }
 
@@ -318,7 +320,7 @@ const GpuCardCorvette = (() => {
       right.style.justifyContent = 'space-between'
       right.style.alignItems = 'stretch'
       right.style.gap = '10px'
-      right.style.width = '152px'
+      right.style.width = '120px'
       right.style.flexShrink = '0'
       right.style.paddingBottom = '6px'
       right.style.boxSizing = 'border-box'
@@ -362,7 +364,7 @@ const GpuCardCorvette = (() => {
       tempCol.style.display = 'flex'
       tempCol.style.flexDirection = 'column-reverse'
       tempCol.style.gap = '2px'
-      tempCol.style.height = '44px'
+      tempCol.style.height = ''
       tempCol.style.width = '9px'
       tempCol.style.background = 'rgba(0,0,0,0.5)'
       tempCol.style.borderRadius = '2px'
@@ -393,7 +395,7 @@ const GpuCardCorvette = (() => {
     if (tempNumEl) {
       tempNumEl.textContent = temp != null ? Math.round(temp) : '—'
       tempNumEl.style.fontFamily = "'DSEG7-Classic', 'Share Tech Mono', monospace"
-      tempNumEl.style.fontSize = '32px'
+      tempNumEl.style.fontSize = '24px'
       tempNumEl.style.fontWeight = '700'
       tempNumEl.style.color = '#ffae1a'
       tempNumEl.style.textShadow = '0 0 13px rgba(255,174,26,0.7)'
@@ -418,6 +420,15 @@ const GpuCardCorvette = (() => {
       })
     }
 
+    const tempLabelRow = cardEl.querySelector('.cv-temp-label-row')
+    if (tempLabelRow) {
+      tempLabelRow.style.display = 'flex'
+      tempLabelRow.style.alignItems = 'center'
+      tempLabelRow.style.justifyContent = 'center'
+      tempLabelRow.style.gap = '6px'
+      tempLabelRow.style.marginTop = '6px'
+    }
+
     const tempLabel = cardEl.querySelector('.cv-temp-label')
     if (tempLabel) {
       tempLabel.style.fontFamily = "'DSEG14-Classic', 'Share Tech Mono', monospace"
@@ -426,7 +437,7 @@ const GpuCardCorvette = (() => {
       tempLabel.style.color = '#ff8a1e'
       tempLabel.style.textShadow = '0 0 8px rgba(255,138,30,0.6)'
       tempLabel.style.textAlign = 'center'
-      tempLabel.style.marginTop = '6px'
+      tempLabel.style.marginTop = '0'
     }
 
     // Fuel module
@@ -451,7 +462,7 @@ const GpuCardCorvette = (() => {
       fuelCol.style.display = 'flex'
       fuelCol.style.flexDirection = 'column-reverse'
       fuelCol.style.gap = '2px'
-      fuelCol.style.height = '84px'
+      fuelCol.style.height = ''
       fuelCol.style.width = '42px'
       fuelCol.style.background = 'rgba(0,0,0,0.5)'
       fuelCol.style.borderRadius = '3px'
@@ -504,8 +515,8 @@ const GpuCardCorvette = (() => {
     const fuelHalf = cardEl.querySelector('[data-role="fuel-half"]')
     if (fuelHalf) {
       fuelHalf.style.fontFamily = "'DSEG14-Classic', 'Share Tech Mono', monospace"
-      fuelHalf.style.fontSize = '15px'
-      fuelHalf.style.fontWeight = '700'
+      fuelHalf.style.fontSize = '10px'
+      fuelHalf.style.fontWeight = '400'
       fuelHalf.style.color = '#ffae1a'
       fuelHalf.style.lineHeight = '1'
     }
@@ -582,7 +593,7 @@ const GpuCardCorvette = (() => {
 
     const pwrReadout = cardEl.querySelector('.cv-pwr-readout')
     if (pwrReadout) {
-      pwrReadout.style.minWidth = '80px'
+      pwrReadout.style.minWidth = '60px'
       pwrReadout.style.textAlign = 'center'
       pwrReadout.style.whiteSpace = 'nowrap'
       pwrReadout.style.background = '#180c0c'
