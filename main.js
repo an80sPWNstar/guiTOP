@@ -230,6 +230,32 @@ app.whenReady().then(() => {
         res.writeHead(500, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: false, error: String(err) }))
       }
+    } else if (req.url.startsWith('/host/') && win && !win.isDestroyed()) {
+      const idx = parseInt(req.url.split('/')[2], 10)
+      if (!Number.isInteger(idx) || idx < 0 || idx > 99) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: 'bad index' }))
+      } else {
+        try {
+          await win.webContents.executeJavaScript(
+            `(() => { const s = document.getElementById('host-select'); s.selectedIndex = ${idx}; s.dispatchEvent(new Event('change')); return s.value })()`)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, index: idx }))
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: String(err) }))
+        }
+      }
+    } else if (req.url === '/procs/toggle' && win && !win.isDestroyed()) {
+      try {
+        await win.webContents.executeJavaScript(
+          `document.getElementById('single-proc-toggle').click()`)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true }))
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: String(err) }))
+      }
     } else if ((req.url === '/skin/gauges' || req.url === '/skin/bars' || req.url === '/skin/corvette') && win && !win.isDestroyed()) {
       const skin = req.url.split('/')[2]
       try {
@@ -248,6 +274,50 @@ app.whenReady().then(() => {
             visible: !!c.offsetParent, cw: c.clientWidth, ch: c.clientHeight,
             bw: c.width, bh: c.height, dpr: window.devicePixelRatio
           })))()`)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, info }))
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: String(err) }))
+      }
+    } else if (req.url === '/debug/corvette' && win && !win.isDestroyed()) {
+      try {
+        const info = await win.webContents.executeJavaScript(
+          `(() => {
+            const cards = document.querySelectorAll('.corvette-card');
+            const result = [];
+            cards.forEach((card, i) => {
+              const wedge = card.querySelector('.cv-wedge');
+              const scale = card.querySelector('.cv-scale');
+              const body = card.querySelector('.cv-body');
+              const left = card.querySelector('.cv-left');
+              const grid = card.closest('.gpu-grid');
+              const panel = card.closest('.tab-panel');
+              const wedgeBars = card.querySelectorAll('[data-role="wedge-bar"]');
+              const tempSegs = card.querySelectorAll('[data-role="temp-seg"]');
+              const fuelSegs = card.querySelectorAll('[data-role="fuel-seg"]');
+              const litWedge = Array.from(wedgeBars).filter(b => !b.style.background.includes('rgba(255,255,255,0.07)') && !b.style.background.includes('rgba(74,')).length;
+              const litTemp = Array.from(tempSegs).filter(b => !b.style.background.includes('rgba(255,255,255,0.07)')).length;
+              const litFuel = Array.from(fuelSegs).filter(b => !b.style.background.includes('rgba(255,255,255,0.07)')).length;
+              result.push({
+                idx: i,
+                cardW: card.offsetWidth, cardH: card.offsetHeight,
+                gridW: grid ? grid.offsetWidth : 0, gridH: grid ? grid.offsetHeight : 0,
+                panelW: panel ? panel.offsetWidth : 0, panelH: panel ? panel.offsetHeight : 0,
+                wedgeW: wedge ? wedge.offsetWidth : 0, wedgeH: wedge ? wedge.offsetHeight : 0,
+                scaleH: scale ? scale.offsetHeight : 0,
+                bodyH: body ? body.offsetHeight : 0,
+                leftW: left ? left.offsetWidth : 0,
+                wedgeBars: wedgeBars.length, litWedge,
+                tempSegs: tempSegs.length, litTemp,
+                fuelSegs: fuelSegs.length, litFuel,
+                wedgeFlex: wedge ? getComputedStyle(wedge).flex : '',
+                wedgeMinH: wedge ? getComputedStyle(wedge).minHeight : '',
+                wedgeCSH: wedge ? getComputedStyle(wedge).height : '',
+              });
+            });
+            return result;
+          })()`)
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: true, info }))
       } catch (err) {

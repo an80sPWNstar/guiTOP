@@ -373,7 +373,12 @@ body {
   text-transform: uppercase;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s;
 }
+.proc-table th:hover { color: var(--text-primary); }
+.proc-table th.sorted { color: var(--color-power, #FF9500); }
 
 .proc-table td {
   padding: 5px 10px;
@@ -404,7 +409,10 @@ body {
 }
 
 .proc-pid { font-variant-numeric: tabular-nums; }
-.proc-mem { font-variant-numeric: tabular-nums; text-align: right; }
+.proc-mem, .proc-cpu, .proc-memp, .proc-time { font-variant-numeric: tabular-nums; }
+/* Numeric columns: header and cells share alignment so they stay inline. */
+.proc-table th.num,
+.proc-table td.num { text-align: right; }
 
 /* ── Add Host / Manage buttons ───────────────── */
 .add-host-btn {
@@ -1024,4 +1032,11 @@ body.skin-corvette .corvette-card .cv-fuel-markers [data-role="fuel-half"] {
 body.skin-corvette .corvette-card .cv-bar-label {
   font-size: clamp(9px, min(2.7cqw, 1.54vh), 13px) !important;
   width: clamp(24px, min(7.5cqw, 4.28vh), 36px) !important;
+}
+
+/* Corvette skin: prevent process table from collapsing the GPU grid */
+body.skin-corvette .proc-toggle { flex-shrink: 0; }
+body.skin-corvette #single-procs {
+  overflow-y: auto;
+  max-height: 45vh;
 }

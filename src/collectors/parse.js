@@ -46,4 +46,32 @@ function parseProcesses(csvText, uuidToIndex) {
     });
 }
 
-module.exports = { parseGpus, parseProcesses };
+// Parses `ps -eo pid=,user:32=,pcpu=,pmem=,etimes=` output (Linux hosts).
+function parsePs(text) {
+  const map = {};
+  const lines = text.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const parts = trimmed.split(/\s+/);
+    if (parts.length !== 5) continue;
+
+    const pid = parseInt(parts[0], 10);
+    const user = parts[1];
+    const cpuRaw = parseFloat(parts[2]);
+    const memRaw = parseFloat(parts[3]);
+    const elapsedRaw = parseInt(parts[4], 10);
+
+    if (!isNaN(pid)) {
+      map[pid] = {
+        user,
+        cpuPercent: isNaN(cpuRaw) ? null : cpuRaw,
+        memPercent: isNaN(memRaw) ? null : memRaw,
+        elapsedSecs: isNaN(elapsedRaw) ? null : elapsedRaw,
+      };
+    }
+  }
+  return map;
+}
+
+module.exports = { parseGpus, parseProcesses, parsePs };

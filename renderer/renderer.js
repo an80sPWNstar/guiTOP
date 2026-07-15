@@ -8,6 +8,7 @@ const state = {
   selectedHost: null,
   data: {},          // { [hostLabel]: latestPayload }
   procsVisible: {},  // { [hostLabel]: bool }
+  procSort: { col: null, asc: false },  // null = unsorted, asc false = descending first
   skin: localStorage.getItem('guitop-skin') || 'bars',
 }
 
@@ -58,12 +59,17 @@ function skinModule() {
   return { mod: GpuCard, cls: '.gpu-card', upd: 'drawGauges' }
 }
 
-function renderGpuCards(container, gpus, compact) {
+function renderGpuCards(container, gpus, compact, hostLabel) {
   const { mod, cls, upd } = skinModule()
+  // Rebuild when the card structure changes: host switch, GPU set change, skin.
+  // Card count alone is not enough — two hosts can both have N GPUs, and the
+  // per-tick update path never rewrites static parts like the GPU name.
+  const sig = (hostLabel || '') + '|' + state.skin + '|' + gpus.map(g => g.name).join(',')
   const existing = container.querySelectorAll(cls)
-  if (existing.length === gpus.length) {
+  if (existing.length === gpus.length && container.dataset.cardSig === sig) {
     gpus.forEach((g, i) => mod[upd](existing[i], g))
   } else {
+    container.dataset.cardSig = sig
     container.innerHTML = gpus.map(g => mod.render(g, compact)).join('')
     const cards = container.querySelectorAll(cls)
     gpus.forEach((g, i) => { if (cards[i]) mod[upd](cards[i], g) })
@@ -93,6 +99,38 @@ function updateHostSelect() {
 }
 
 // ── Rendering ───────────────────────────────────
+
+// Map column header text to process field for sorting
+const PROC_SORT_FIELDS = {
+  'GPU': 'gpuIndex',
+  'PID': 'pid',
+  'USER': 'user',
+  'CPU%': 'cpuPercent',
+  'MEM%': 'memPercent',
+  'TIME': 'elapsedSecs',
+  'PROCESS': 'processName',
+  'VRAM': 'usedMemory',
+}
+
+function sortProcesses(processes) {
+  const { col, asc } = state.procSort
+  if (!col || !processes) return processes
+  const field = PROC_SORT_FIELDS[col]
+  if (!field) return processes
+  const sorted = [...processes].sort((a, b) => {
+    const va = a[field] != null ? a[field] : (typeof a[field] === 'string' ? '' : -Infinity)
+    const vb = b[field] != null ? b[field] : (typeof b[field] === 'string' ? '' : -Infinity)
+    if (typeof va === 'string' && typeof vb === 'string') {
+      const cmp = va.localeCompare(vb)
+      return asc ? cmp : -cmp
+    }
+    if (va < vb) return asc ? -1 : 1
+    if (va > vb) return asc ? 1 : -1
+    return 0
+  })
+  return sorted
+}
+
 function renderSingle() {
   const container = document.getElementById('single-gpus')
   const procsDiv = document.getElementById('single-procs')
@@ -113,7 +151,7 @@ function renderSingle() {
     return
   }
 
-  renderGpuCards(container, payload.gpus, false)
+  renderGpuCards(container, payload.gpus, false, payload.host)
 
   // Process toggle
   toggle.style.display = ''
@@ -121,7 +159,7 @@ function renderSingle() {
   toggle.textContent = show ? 'Hide Processes' : 'Show Processes'
   procsDiv.style.display = show ? '' : 'none'
   if (show) {
-    procsDiv.innerHTML = ProcessTable.render(payload.processes)
+    procsDiv.innerHTML = ProcessTable.render(sortProcesses(payload.processes), state.procSort)
   }
 }
 
@@ -161,7 +199,7 @@ function renderMulti() {
     if (!payload || !payload.ok) continue
     const grid = container.querySelector(`.gpu-grid[data-host-grid="${CSS.escape(label)}"]`)
     if (!grid) continue
-    renderGpuCards(grid, payload.gpus, true)
+    renderGpuCards(grid, payload.gpus, true, label)
   }
 }
 
@@ -174,6 +212,21 @@ function renderActive() {
 document.getElementById('single-proc-toggle').addEventListener('click', () => {
   const host = state.selectedHost
   state.procsVisible[host] = !state.procsVisible[host]
+  renderSingle()
+})
+
+// ── Process table column sort (event delegation) ──
+document.getElementById('single-procs').addEventListener('click', (e) => {
+  const th = e.target.closest('th')
+  if (!th) return
+  const col = th.dataset.col
+  if (!col || !PROC_SORT_FIELDS[col]) return
+  if (state.procSort.col === col) {
+    state.procSort.asc = !state.procSort.asc
+  } else {
+    state.procSort.col = col
+    state.procSort.asc = false  // descending first
+  }
   renderSingle()
 })
 

@@ -1,8 +1,71 @@
 # guiTOP — Build Status / Session Handoff
 
-_Last updated: 2026-07-09. Read this + `CLAUDE.md` once at session start. Don't re-derive what's below._
+_Last updated: 2026-07-14. Read this + `CLAUDE.md` once at session start. Don't re-derive what's below._
 
-## Session 2026-07-09 — Multi-tab bars fix, GitHub, v0.1.2 build
+## Session 2026-07-13 (2nd) — process table: Windows VRAM workaround, extra columns (IN PROGRESS)
+User report: "processes not live / not updating". Investigation found table WAS live; real issues fixed:
+
+### DONE + verified this session (all UNCOMMITTED)
+1. **Stale-card bug FIXED** (`renderer/renderer.js renderGpuCards`): cards were reused whenever
+   count matched → switching Single-tab host kept old GPU names (RTX titles over P100 data).
+   Now rebuilds on structural signature change (`container.dataset.cardSig` = host|skin|gpu names).
+   `renderGpuCards(container, gpus, compact, hostLabel)` — callers pass host label.
+2. **Windows per-process VRAM FIXED** (nvidia-smi WDDM reports `[N/A]`; nvitop shows `WDDM:N/A` too).
+   Workaround: perf counters `\GPU Process Memory(*)\Dedicated Usage` + LUID→GPU-name map from
+   registry `HKLM\SOFTWARE\Microsoft\DirectX` (AdapterLuid/Description). New module
+   `src/collectors/win-gpu-mem.js` (background 3s poll, ~1.2s/query; `lookup(pid, gpuName)`→MB).
+   Merged in `service.js pollLocal`. Verified: ComfyUI python.exe 4376 MB ≈ nvitop 4348MiB.
+3. **New columns USER/CPU%/MEM%/TIME** (nvitop parity) — mostly built, NOT yet verified end-to-end:
+   - `renderer/widgets/process-table.js` REWRITTEN: cols GPU|PID|USER|CPU%|MEM%|TIME|PROCESS|VRAM,
+     `fmtTime()` (hh:mm:ss / "2d 03:14"), numeric cells+headers class `num`.
+   - **Alignment bug fixed**: `.proc-table th` was all left-aligned while VRAM td right-aligned.
+     `styles/main.css`: `.proc-table th.num, td.num { text-align: right }`.
+   - `src/collectors/parse.js`: added `parsePs()` for `ps -eo pid=,user:32=,pcpu=,pmem=,etimes=`.
+   - `src/collectors/service.js`: pollRemote runs that fixed `PS_EO_CMD` as 3rd SSH exec, merges
+     user/cpuPercent/memPercent/elapsedSecs into process rows; pollLocal merges from
+     `src/collectors/win-proc-stats.js` (NEW: background Get-Process sampler, delta-CPU%,
+     memPercent via os.totalmem, elapsed via StartTime).
+
+### RESUME HERE — Windows USER column FIXED (2026-07-14)
+- Quser patch APPLIED to `win-proc-stats.js`:
+  - PS_CMD: added `@{n='i';e={$_.SessionId}}`
+  - `nextLatest[Id]`: stores `sessionId`
+  - `pollOwners()`: quser → session→username map (replaced stalled tasklist)
+  - `lookup()`: resolves user via `owners[e.sessionId]`
+- User must VISUALLY VERIFY: Single tab Bryan-DT, Show Processes → USER column populated,
+  CPU%/MEM%/TIME live, num cols right-aligned. Then Family-LLM → remote ps columns.
+
+### Session infra notes
+- Dev endpoints added to main.js (:17580): `/procs/toggle` (click Show Processes),
+  `/host/<index>` (Single-tab host select). Existing: /screenshot /tab/* /skin/* /resize /debug/gauges.
+- Local LLM usage this session (.70, thinking off, temp 0): win-gpu-mem.js (730/781 tok),
+  win-proc-stats.js (720/695), parsePs+process-table rewrite (891/999), tasklist owner patch
+  (505/414, superseded), quser patch (413/404, PENDING APPLY). `.100 was DOWN (conn refused).`
+- App may still be running from testing (kill: `Get-Process electron | Stop-Process -Force`).
+
+## Session 2026-07-14 — Corvette procs fix, column sort, quser apply
+
+### DONE
+1. **C4 Corvette process table layout FIXED**: grid collapsed to 0 height when procs shown.
+   Root cause: Corvette panel `overflow:hidden` + grid `flex:1; min-height:0` (can shrink to 0)
+   + `#single-procs` without `max-height` → process table claimed all flex space, grid→0.
+   Fix: `body.skin-corvette #single-procs { overflow-y: auto; max-height: 45vh }`
+   + `.proc-toggle { flex-shrink: 0 }`. Verified: gridH 175px (was 0), gauges visible.
+
+2. **Column sort on process table**: click header → sort descending (default), click again →
+   toggle asc/desc. Visual: sorted header turns orange with ▲/▼ arrow. Event delegation on
+   `#single-procs`. Sort state in `state.procSort`. Sort applied before `ProcessTable.render()`.
+
+3. **Quser patch APPLIED** (see RESUME HERE above — user must visually verify USER column).
+
+4. **New dev endpoint**: `/debug/corvette` — returns offsetWidth/Height + lit segment counts
+   for Corvette cards (wedge, temp, fuel, grid, panel).
+
+### NOT yet done
+- Visual verification of USER column (Bryan-DT + Family-LLM)
+- Commit (user hasn't asked)
+- Window size/position persistence
+- App icon + code signing
 - **Multi tab bars bug FIXED.** Root cause: CSP `style-src 'self'` blocks inline `style=""`
   attrs in innerHTML — bar widths set inline were ignored, `.bar-fill` (block div) defaulted to
   100% width. Single tab only worked because its per-tick path used `GpuCardBars.update()`
