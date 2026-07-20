@@ -94,6 +94,7 @@ function createWindow() {
     for (const h of hosts) startCollector(h)
     broadcastHostList()
 
+    process.env.GUITOP_DISPLAY_NAME = 'an80sPWNstar'
     claudeUsageHandle = startClaudeUsage((payload) => {
       if (win && !win.isDestroyed()) {
         win.webContents.send('claude-usage', payload)

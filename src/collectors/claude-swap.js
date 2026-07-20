@@ -19,13 +19,19 @@ function clampPct(v) {
   return Math.max(0, Math.min(100, n))
 }
 
+function accountAlias(a) {
+  const displayName = process.env.GUITOP_DISPLAY_NAME
+  if (displayName) return displayName.slice(0, 24)
+  return String(a.alias || String(a.email || '').split('@')[0] || ('ACC' + a.number)).slice(0, 24)
+}
+
 function parseSwap(stdout) {
   const data = JSON.parse(stdout)
   return {
     activeNumber: data.activeAccountNumber ?? null,
     accounts: (data.accounts || []).map(a => ({
       number: Number(a.number) || 0,
-      alias: String(a.alias || String(a.email || '').split('@')[0] || ('ACC' + a.number)).slice(0, 24),
+      alias: accountAlias(a),
       active: !!a.active,
       disabled: !!a.disabled,
       fiveHourPct: clampPct(a.usage && a.usage.fiveHour && a.usage.fiveHour.pct),
