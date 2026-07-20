@@ -10,6 +10,9 @@ const state = {
   procsVisible: {},  // { [hostLabel]: bool }
   procSort: { col: null, asc: false },  // null = unsorted, asc false = descending first
   skin: localStorage.getItem('guitop-skin') || 'bars',
+  claudeDock: localStorage.getItem('guitop-claude-dock') || 'top',  // top | bottom | off
+  claudeUsage: null,
+  claudeSwap: null,
 }
 
 function applySkinClass() {
@@ -51,7 +54,52 @@ skinSelect.addEventListener('change', () => {
   document.getElementById('multi-hosts').innerHTML = ''
   multiSig = ''
   renderActive()
+  renderClaudeStrip()
 })
+
+// ── Claude usage strip ─────────────────────────
+const claudeTopEl = document.getElementById('claude-strip-top')
+const claudeBottomEl = document.getElementById('claude-strip-bottom')
+const claudeBtn = document.getElementById('claude-toggle')
+const claudeArrow = claudeBtn.querySelector('.cu-arrow')
+
+function renderClaudeStrip() {
+  const dock = state.claudeDock
+  const on = dock !== 'off'
+  const theme = ClaudeUsageStrip.theme(state.skin)
+
+  claudeBtn.style.background = on ? theme.accent + '22' : ''
+  claudeBtn.style.borderColor = on ? theme.accent + '88' : ''
+  claudeBtn.style.color = on ? theme.accent : ''
+  claudeArrow.textContent = on ? (dock === 'bottom' ? '▾' : '▴') : ''
+
+  claudeTopEl.style.display = dock === 'top' ? 'block' : 'none'
+  claudeBottomEl.style.display = dock === 'bottom' ? 'block' : 'none'
+
+  const target = dock === 'top' ? claudeTopEl : dock === 'bottom' ? claudeBottomEl : null
+  if (!target) return
+  if (!target.querySelector('.cu-strip')) target.innerHTML = ClaudeUsageStrip.render()
+  ClaudeUsageStrip.update(target, state.claudeUsage, state.skin, state.claudeSwap)
+}
+
+claudeBtn.addEventListener('click', () => {
+  const order = ['top', 'bottom', 'off']
+  state.claudeDock = order[(order.indexOf(state.claudeDock) + 1) % order.length]
+  localStorage.setItem('guitop-claude-dock', state.claudeDock)
+  renderClaudeStrip()
+})
+
+window.guiTOP.onClaudeUsage((payload) => {
+  state.claudeUsage = payload
+  renderClaudeStrip()
+})
+
+window.guiTOP.onClaudeSwap((payload) => {
+  state.claudeSwap = payload
+  renderClaudeStrip()
+})
+
+renderClaudeStrip()
 
 function skinModule() {
   if (state.skin === 'corvette') return { mod: GpuCardCorvette, cls: '.corvette-card', upd: 'update' }

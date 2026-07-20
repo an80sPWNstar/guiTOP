@@ -1040,3 +1040,137 @@ body.skin-corvette #single-procs {
   overflow-y: auto;
   max-height: 45vh;
 }
+
+/* ── Claude usage strip ──────────────────────── */
+body {
+  --cu-bg: #141414;
+  --cu-border: #000;
+  --cu-dim: rgba(255, 255, 255, 0.38);
+  --cu-digit-font: 'Share Tech Mono', monospace;
+  --cu-brand-font: 'Rajdhani', sans-serif;
+  --cu-radius: 3px;
+}
+body.skin-bars {
+  --cu-bg: rgba(10, 18, 32, 0.82);
+  --cu-border: rgba(30, 75, 110, 0.4);
+  --cu-dim: rgba(255, 255, 255, 0.4);
+  --cu-brand-font: 'Orbitron', sans-serif;
+}
+body.skin-corvette {
+  --cu-bg: #0a0805;
+  --cu-border: rgba(255, 176, 0, 0.25);
+  --cu-dim: rgba(255, 176, 0, 0.5);
+  --cu-digit-font: 'DSEG14-Classic', monospace;
+}
+
+.cu-dock { display: none; }
+.cu-dock-bottom {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 26px; /* sits on top of the fixed status bar */
+  z-index: 49;
+}
+body.skin-corvette .cu-dock-bottom { position: static; }
+body.skin-corvette .cu-dock { flex-shrink: 0; }
+
+.cu-strip {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 8px 20px;
+  background: var(--cu-bg);
+}
+.cu-dock-top .cu-strip { border-bottom: 1px solid var(--cu-border); }
+.cu-dock-bottom .cu-strip { border-top: 1px solid var(--cu-border); }
+
+.cu-brand { display: flex; align-items: baseline; gap: 8px; }
+.cu-brand-name {
+  font-family: var(--cu-brand-font);
+  font-weight: 900;
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+.cu-brand-sub { font-size: 9px; letter-spacing: 2px; color: var(--cu-dim); }
+
+.cu-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 170px;
+  max-width: 280px;
+}
+.cu-label {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--cu-dim);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cu-track {
+  flex: 1;
+  display: flex;
+  gap: 2px;
+  height: 11px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: var(--cu-radius);
+  padding: 2px 3px;
+  box-sizing: border-box;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.cu-seg { flex: 1; background: rgba(255, 255, 255, 0.07); border-radius: 1px; }
+
+.cu-readout { display: flex; align-items: baseline; gap: 6px; }
+.cu-val { font-family: var(--cu-digit-font); font-size: 12px; white-space: nowrap; }
+.cu-unit { font-size: 9px; color: var(--cu-dim); }
+
+.claude-toggle {
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  align-self: center;
+  margin-right: 8px;
+}
+.cu-arrow { font-size: 16px; line-height: 0; vertical-align: -2px; }
+
+/* ── Claude swap — account chips + auto status ── */
+.cu-div { width: 1px; align-self: stretch; background: var(--cu-border); }
+.cu-accts { display: flex; align-items: center; gap: 8px; }
+.cu-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 9px;
+  border-radius: var(--cu-radius);
+  border: 1px solid var(--cu-border);
+  background: rgba(255, 255, 255, 0.03);
+}
+.cu-chip-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--cu-dim);
+}
+.cu-chip-bars { display: flex; flex-direction: column; gap: 2px; }
+.cu-mini {
+  width: 34px;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+.cu-mini-fill { height: 100%; width: 0; border-radius: 2px; }
+.cu-auto { display: flex; align-items: center; gap: 6px; }
+.cu-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.15); }

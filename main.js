@@ -9,6 +9,8 @@ const {
   loadKnownHosts, saveKnownHost,
 } = require('./src/config/hosts')
 const { startHost } = require('./src/collectors/service')
+const { startClaudeUsage } = require('./src/collectors/claude-usage')
+const { startClaudeSwap } = require('./src/collectors/claude-swap')
 const { testConnect, execRemote } = require('./src/collectors/ssh')
 
 const isDev = process.argv.includes('--dev')
@@ -20,6 +22,8 @@ const activeHosts = []     // validated host entries
 const rawHosts = []        // raw configs (for persistence — no passwords)
 const hostHandles = {}     // { label: stopHandle }
 const hostPasswords = {}   // { label: password } — in memory only, never persisted
+let claudeUsageHandle = null
+let claudeSwapHandle = null
 
 function broadcastHostList() {
   if (win && !win.isDestroyed()) {
@@ -89,6 +93,17 @@ function createWindow() {
 
     for (const h of hosts) startCollector(h)
     broadcastHostList()
+
+    claudeUsageHandle = startClaudeUsage((payload) => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('claude-usage', payload)
+      }
+    })
+    claudeSwapHandle = startClaudeSwap((payload) => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('claude-swap', payload)
+      }
+    })
   })
 }
 
@@ -246,6 +261,16 @@ app.whenReady().then(() => {
           res.end(JSON.stringify({ ok: false, error: String(err) }))
         }
       }
+    } else if (req.url === '/claude/toggle' && win && !win.isDestroyed()) {
+      try {
+        await win.webContents.executeJavaScript(
+          `document.getElementById('claude-toggle').click()`)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true }))
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: String(err) }))
+      }
     } else if (req.url === '/procs/toggle' && win && !win.isDestroyed()) {
       try {
         await win.webContents.executeJavaScript(
@@ -351,4 +376,6 @@ app.on('window-all-closed', () => app.quit())
 
 app.on('before-quit', () => {
   for (const h of Object.values(hostHandles)) h.stop()
+  if (claudeUsageHandle) claudeUsageHandle.stop()
+  if (claudeSwapHandle) claudeSwapHandle.stop()
 })

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/dseg@0.46.0/css/dseg.css" rel="stylesheet">
+  <style> body { margin:0; } </style>
+</helmet>
+
+<div style="min-height:100vh;background:{{ shellBg }};color:#fff;font-family:'Rajdhani',sans-serif;display:flex;flex-direction:column;">
+
+  <div style="display:flex;align-items:center;gap:12px;padding:10px 20px;background:rgba(255,255,255,0.02);border-bottom:1px solid rgba(255,255,255,0.08);">
+    <div style="font-family:'Orbitron',sans-serif;font-weight:900;font-size:13px;letter-spacing:1.5px;color:{{ cuAccent }};">CLAUDE SWAP STRIP</div>
+    <select onChange="{{ handleSkinChange }}" value="{{ skin }}" style="margin-left:auto;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);color:#fff;font-size:11px;padding:7px 12px;border-radius:6px;cursor:pointer;font-family:inherit;">
+      <option value="bars">Ice Redline (provisional)</option>
+      <option value="corvette">80's C4 Corvette</option>
+      <option value="gauges">Gauges</option>
+      <option value="outrun">Outrun '83</option>
+      <option value="terminal">Terminal</option>
+    </select>
+    <button onClick="{{ toggleUsage }}" title="Toggle Claude usage strip" style="background:{{ usageBtnBg }};border:1px solid {{ usageBtnBorder }};color:{{ usageBtnColor }};font-size:11px;font-weight:600;letter-spacing:0.4px;padding:7px 12px;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap;">CLAUDE <span style="font-size:16px;line-height:0;vertical-align:-2px;">{{ usageBtnArrow }}</span></button>
+  </div>
+
+  <sc-if value="{{ showUsageTop }}">
+    <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding:8px 20px;background:{{ cuBg }};border-bottom:1px solid {{ cuBorder }};">
+      <div style="display:flex;align-items:baseline;gap:8px;">
+        <span style="font-family:{{ cuBrandFont }};font-weight:900;font-size:11px;letter-spacing:2px;color:{{ cuAccent }};text-shadow:0 0 8px {{ cuAccent }}55;">CLAUDE</span>
+        <span style="font-size:9px;letter-spacing:2px;color:{{ cuDim }};">USAGE</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:170px;max-width:280px;">
+        <span style="font-size:9px;letter-spacing:1px;color:{{ cuDim }};text-transform:uppercase;white-space:nowrap;">Session</span>
+        <div style="flex:1;display:flex;gap:2px;height:11px;background:rgba(0,0,0,0.4);border-radius:{{ cuRadius }};padding:2px 3px;box-sizing:border-box;box-shadow:inset 0 1px 3px rgba(0,0,0,0.6);">
+          <sc-for list="{{ cuSessionSeg }}" as="seg" hint-placeholder-count="20">
+            <div style="flex:1;background:{{ seg.bg }};box-shadow:{{ seg.glow }};border-radius:1px;"></div>
+          </sc-for>
+        </div>
+        <span style="font-family:{{ cuDigitFont }};font-size:12px;color:{{ cuSessionColor }};text-shadow:0 0 6px {{ cuSessionColor }}66;white-space:nowrap;">{{ cuSessionPct }}</span><span style="font-size:9px;color:{{ cuDim }};">%</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:170px;max-width:280px;">
+        <span style="font-size:9px;letter-spacing:1px;color:{{ cuDim }};text-transform:uppercase;white-space:nowrap;">Week</span>
+        <div style="flex:1;display:flex;gap:2px;height:11px;background:rgba(0,0,0,0.4);border-radius:{{ cuRadius }};padding:2px 3px;box-sizing:border-box;box-shadow:inset 0 1px 3px rgba(0,0,0,0.6);">
+          <sc-for list="{{ cuWeekSeg }}" as="seg" hint-placeholder-count="20">
+            <div style="flex:1;background:{{ seg.bg }};box-shadow:{{ seg.glow }};border-radius:1px;"></div>
+          </sc-for>
+        </div>
+        <span style="font-family:{{ cuDigitFont }};font-size:12px;color:{{ cuWeekColor }};text-shadow:0 0 6px {{ cuWeekColor }}66;white-space:nowrap;">{{ cuWeekPct }}</span><span style="font-size:9px;color:{{ cuDim }};">%</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:6px;">
+        <span style="font-size:9px;letter-spacing:1px;color:{{ cuDim }};text-transform:uppercase;">Reset</span>
+        <span style="font-family:{{ cuDigitFont }};font-size:12px;color:{{ cuValColor }};text-shadow:0 0 6px {{ cuValColor }}55;white-space:nowrap;">{{ cuReset }}</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:6px;">
+        <span style="font-size:9px;letter-spacing:1px;color:{{ cuDim }};text-transform:uppercase;">Tokens Today</span>
+        <span style="font-family:{{ cuDigitFont }};font-size:12px;color:{{ cuValColor }};text-shadow:0 0 6px {{ cuValColor }}55;white-space:nowrap;">{{ cuTokens }}</span>
+      </div>
+      <div style="width:1px;align-self:stretch;background:{{ cuBorder }};"></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <sc-for list="{{ cuAccounts }}" as="acct" hint-placeholder-count="3">
+          <div style="display:flex;align-items:center;gap:7px;padding:3px 9px;border:1px solid {{ acct.border }};border-radius:{{ cuRadius }};background:{{ acct.bg }};">
+            <span style="font-size:9px;font-weight:700;letter-spacing:1px;color:{{ acct.labelColor }};white-space:nowrap;">{{ acct.label }}</span>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <div style="width:34px;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;"><div style="width:{{ acct.w5 }};height:100%;background:{{ acct.c5 }};box-shadow:0 0 4px {{ acct.c5 }};"></div></div>
+              <div style="width:34px;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;"><div style="width:{{ acct.w7 }};height:100%;background:{{ acct.c7 }};box-shadow:0 0 4px {{ acct.c7 }};"></div></div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div style="width:6px;height:6px;border-radius:50%;background:{{ cuAutoDot }};box-shadow:0 0 6px {{ cuAutoDot }};"></div>
+        <span style="font-size:9px;letter-spacing:1px;color:{{ cuDim }};text-transform:uppercase;">Auto</span>
+        <span style="font-family:{{ cuDigitFont }};font-size:12px;color:{{ cuValColor }};text-shadow:0 0 6px {{ cuValColor }}55;white-space:nowrap;">{{ cuAutoLast }}</span>
+      </div>
+    </div>
+  </sc-if>
+
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.18);font-size:12px;letter-spacing:2px;text-transform:uppercase;">Dashboard content area</div>
+
+  <sc-if value="{{ showUsageBottom }}">
+    <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding:8px 20px;background:{{ cuBg }};border-top:1px solid {{ cuBorder }};">
+      <div style="display:flex;align-items:baseline;gap:8px;">
+        <span style="font-family:{{ cuBrandFont }};font-weight:900;font-size:11px;letter-spacing:2px;color:{{ cuAccent }};text-shadow:0 0 8px {{ cuAccent }}55;">CLAUDE</span>
+        <span style="font-size:9px;letter-spacing:2px;color:{{ cuDim }};">USAGE</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:170px;max-width:280px;">
+        <span style="font-size:9px;letter-spacing:1px;color:{{ cuDim }};text-transform:uppercase;white-space:nowrap;">Session</span>
+        <div style="flex:1;display:flex;gap:2px;height:11px;background:rgba(0,0,0,0.4);border-radius:{{ cuRadius }};padding:2px 3px;box-sizing:border-box;box-shadow:inset 0 1px 3px rgba(0,0,0,0.6);">
+          <sc-for list="{{ cuSessionSeg }}" as="seg" hint-placeholder-count="20">
+            <div style="flex:1;background:{{ seg.bg }};box-shadow:{{ seg.glow }};border-radius:1px;"></div>
+          </sc-for>
+        </div>
+        <span style="font-family:{{ cuDigitFont }};font-size:12px;color:{{ cuSessionColor }};text-shadow:0 0 6px {{ cuSessionColor }}66;white-space:nowrap;">{{ cuSessionPct }}</span><span style="font-size:9px;color:{{ cuDim }};">%</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:170px;max-width:280px;">
+        <span style="font-size:9px;letter-spacing:1px;color:{{ cuDim }};text-transform:uppercase;white-space:nowrap;">Week</span>
+        <div style="flex:1;display:flex;gap:2px;height:11px;background:rgba(0,0,0,0.4);border-radius:{{ cuRadius }};padding:2px 3px;box-sizing:border-box;box-shadow:inset 0 1px 3px rgba(0,0,0,0.6);">
+          <sc-for list="{{ cuWeekSeg }}" as="seg" hint-placeholder-count="20">
+            <div style="flex:1;background:{{ seg.bg }};box-shadow:{{ seg.glow }};border-radius:1px;"></div>
+          </sc-for>
+        </div>
+        <span style="font-family:{{ cuDigitFont }};font-size:12px;color:{{ cuWeekColor }};text-shadow:0 0 6px {{ cuWeekColor }}66;white-space:nowrap;">{{ cuWeekPct }}</span><span style="font-size:9px;color:{{ cuDim }};">%</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:6px;">
+        <span style="font-size:9px;letter-spacing:1px;color:{{ cuDim }};text-transform:uppercase;">Reset</span>
+        <span style="font-family:{{ cuDigitFont }};font-size:12px;color:{{ cuValColor }};text-shadow:0 0 6px {{ cuValColor }}55;white-space:nowrap;">{{ cuReset }}</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:6px;">
+        <span style="font-size:9px;letter-spacing:1px;color:{{ cuDim }};text-transform:uppercase;">Tokens Today</span>
+        <span style="font-family:{{ cuDigitFont }};font-size:12px;color:{{ cuValColor }};text-shadow:0 0 6px {{ cuValColor }}55;white-space:nowrap;">{{ cuTokens }}</span>
+      </div>
+      <div style="width:1px;align-self:stretch;background:{{ cuBorder }};"></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <sc-for list="{{ cuAccounts }}" as="acct" hint-placeholder-count="3">
+          <div style="display:flex;align-items:center;gap:7px;padding:3px 9px;border:1px solid {{ acct.border }};border-radius:{{ cuRadius }};background:{{ acct.bg }};">
+            <span style="font-size:9px;font-weight:700;letter-spacing:1px;color:{{ acct.labelColor }};white-space:nowrap;">{{ acct.label }}</span>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <div style="width:34px;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;"><div style="width:{{ acct.w5 }};height:100%;background:{{ acct.c5 }};box-shadow:0 0 4px {{ acct.c5 }};"></div></div>
+              <div style="width:34px;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;"><div style="width:{{ acct.w7 }};height:100%;background:{{ acct.c7 }};box-shadow:0 0 4px {{ acct.c7 }};"></div></div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div style="width:6px;height:6px;border-radius:50%;background:{{ cuAutoDot }};box-shadow:0 0 6px {{ cuAutoDot }};"></div>
+        <span style="font-size:9px;letter-spacing:1px;color:{{ cuDim }};text-transform:uppercase;">Auto</span>
+        <span style="font-family:{{ cuDigitFont }};font-size:12px;color:{{ cuValColor }};text-shadow:0 0 6px {{ cuValColor }}55;white-space:nowrap;">{{ cuAutoLast }}</span>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { skin: 'corvette', usagePos: 'top' };
+
+  handleSkinChange = (e) => { this.setState({ skin: e.target.value }); };
+  toggleUsage = () => {
+    const order = ['top', 'bottom', 'off'];
+    this.setState(s => ({ usagePos: order[(order.indexOf(s.usagePos) + 1) % order.length] }));
+  };
+
+  // 20-segment LED bar; segments in the top ~28% shift amber->red regardless of fill (matches GPU bars)
+  segBar(pct, color, count, glowColor) {
+    count = count || 20;
+    glowColor = glowColor || color;
+    const litThresh = Math.max(0, Math.min(100, pct)) / 100 * count;
+    const arr = [];
+    for (let i = 0; i < count; i++) {
+      const frac = (i + 1) / count;
+      let c = color, gc = glowColor;
+      if (frac > 0.90) { c = '#ff2e3e'; gc = '#ff5a68'; }
+      else if (frac > 0.82) { c = '#ff5a1e'; gc = '#ff8a4a'; }
+      else if (frac > 0.72) { c = '#ff9a2e'; gc = '#ffb85a'; }
+      const lit = (i + 1) <= litThresh;
+      arr.push({ bg: lit ? c : 'rgba(255,255,255,0.07)', glow: lit ? ('0 0 7px ' + gc + ', 0 0 2px ' + gc) : 'none' });
+    }
+    return arr;
+  }
+
+  // Mock data — replace with real feed (see README, "Wiring real data")
+  getClaudeUsage() {
+    return { sessionPct: 62, weekPct: 41, reset: '1H 47M', tokens: '2.4M' };
+  }
+
+  // Mock cswap accounts — replace with `cswap list --json` poller (see README, "Wiring real data")
+  getAccounts() {
+    return [
+      { n: 1, alias: 'DEV', s5: 62, s7: 41, active: true },
+      { n: 2, alias: 'HOME', s5: 12, s7: 28, active: false },
+      { n: 3, alias: 'WORK', s5: 91, s7: 77, active: false },
+    ];
+  }
+
+  renderVals() {
+    const skin = this.state.skin;
+    const cu = this.getClaudeUsage();
+    const cuTheme = {
+      bars:     { bg: 'rgba(10,18,32,0.82)', border: 'rgba(30,75,110,0.4)',   dim: 'rgba(255,255,255,0.4)',  seg: '#1a7fc0', glow: '#3a9fd8', val: '#3a9fd8', digit: "'Share Tech Mono', monospace", brand: "'Orbitron', sans-serif", radius: '3px' },
+      corvette: { bg: '#0a0805',             border: 'rgba(255,176,0,0.25)',  dim: 'rgba(255,176,0,0.5)',    seg: '#2ecc40', glow: '#5fe870', val: '#ffb000', digit: "'DSEG14 Classic', monospace",  brand: "'Rajdhani', sans-serif",  radius: '3px' },
+      gauges:   { bg: '#141414',             border: '#000',                  dim: 'rgba(255,255,255,0.38)', seg: '#1f9e5a', glow: '#3fc079', val: '#3fc079', digit: "'Share Tech Mono', monospace", brand: "'Rajdhani', sans-serif",  radius: '3px' },
+      outrun:   { bg: 'rgba(10,4,24,0.6)',   border: 'rgba(255,45,149,0.35)', dim: 'rgba(255,255,255,0.4)',  seg: '#22D3FF', glow: '#7ce7ff', val: '#22D3FF', digit: "'Share Tech Mono', monospace", brand: "'Orbitron', sans-serif", radius: '3px' },
+      terminal: { bg: '#0A0A0A',             border: 'rgba(0,220,130,0.5)',   dim: 'rgba(0,220,130,0.5)',    seg: '#00DC82', glow: '#33ffa8', val: '#00DC82', digit: "'Share Tech Mono', monospace", brand: "'Share Tech Mono', monospace", radius: '0' },
+    }[skin];
+    const accentColor = skin === 'outrun' ? '#22D3FF' : skin === 'terminal' ? '#00DC82' : skin === 'corvette' ? '#FFB000' : '#4C9AFF';
+    const shellBg = skin === 'outrun' ? '#0a0418' : skin === 'terminal' ? '#060606' : skin === 'corvette' ? '#050505' : '#060A12';
+    const cuValColor = (p) => p >= 95 ? '#FF4757' : p >= 80 ? '#FFC857' : cuTheme.val;
+    const usagePos = this.state.usagePos;
+    const usageOn = usagePos !== 'off';
+
+    return {
+      skin, shellBg, handleSkinChange: this.handleSkinChange,
+      showUsageTop: usagePos === 'top', showUsageBottom: usagePos === 'bottom',
+      toggleUsage: this.toggleUsage,
+      usageBtnArrow: usageOn ? (usagePos === 'bottom' ? '\u25BE' : '\u25B4') : '',
+      usageBtnBg: usageOn ? accentColor + '22' : 'rgba(255,255,255,0.05)',
+      usageBtnBorder: usageOn ? accentColor + '88' : 'rgba(255,255,255,0.15)',
+      usageBtnColor: usageOn ? accentColor : 'rgba(255,255,255,0.45)',
+      cuBg: cuTheme.bg, cuBorder: cuTheme.border, cuDim: cuTheme.dim, cuAccent: accentColor,
+      cuBrandFont: cuTheme.brand, cuDigitFont: cuTheme.digit, cuRadius: cuTheme.radius, cuValColor: cuTheme.val,
+      cuSessionSeg: this.segBar(cu.sessionPct, cuTheme.seg, 20, cuTheme.glow),
+      cuWeekSeg: this.segBar(cu.weekPct, cuTheme.seg, 20, cuTheme.glow),
+      cuSessionPct: cu.sessionPct, cuWeekPct: cu.weekPct,
+      cuSessionColor: cuValColor(cu.sessionPct), cuWeekColor: cuValColor(cu.weekPct),
+      cuReset: cu.reset, cuTokens: cu.tokens,
+      cuAccounts: this.getAccounts().map(a => {
+        const barC = (p) => p >= 95 ? '#FF4757' : p >= 80 ? '#FFC857' : cuTheme.seg;
+        return {
+          label: (a.active ? '\u25B8 ' : '') + a.n + ' ' + a.alias,
+          labelColor: a.active ? accentColor : cuTheme.dim,
+          border: a.active ? accentColor + '88' : cuTheme.border,
+          bg: a.active ? accentColor + '14' : 'rgba(255,255,255,0.03)',
+          w5: a.s5 + '%', w7: a.s7 + '%', c5: barC(a.s5), c7: barC(a.s7),
+        };
+      }),
+      cuAutoDot: cuTheme.seg, cuAutoLast: 'ON \u00B7 23M',
+    };
+  }
+}
+</script>
+</body>
+</html>
