@@ -9,4 +9,10 @@ contextBridge.exposeInMainWorld('guiTOP', {
   addHost: (config) => ipcRenderer.invoke('add-host', config),
   removeHost: (label) => ipcRenderer.invoke('remove-host', label),
   editHost: (label, config) => ipcRenderer.invoke('edit-host', label, config),
+  cswapRefresh: () => ipcRenderer.invoke('cswap-refresh'),
+  cswapSetAlias: (number, alias) => ipcRenderer.invoke('cswap-set-alias', number, alias),
+  cswapSetEnabled: (number, enabled) => ipcRenderer.invoke('cswap-set-enabled', number, enabled),
+  cswapRemoveAccount: (number) => ipcRenderer.invoke('cswap-remove-account', number),
+  cswapAddCurrent: (opts) => ipcRenderer.invoke('cswap-add-current', opts),
+  cswapAddToken: (opts) => ipcRenderer.invoke('cswap-add-token', opts),
 })

@@ -1075,11 +1075,12 @@ body.skin-corvette .cu-dock-bottom { position: static; }
 body.skin-corvette .cu-dock { flex-shrink: 0; }
 
 .cu-strip {
+  container-type: inline-size;
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: clamp(12px, 4cqw, 24px);
   flex-wrap: wrap;
-  padding: 8px 20px;
+  padding: clamp(4px, 1cqw, 8px) clamp(10px, 3cqw, 20px);
   background: var(--cu-bg);
 }
 .cu-dock-top .cu-strip { border-bottom: 1px solid var(--cu-border); }
@@ -1089,21 +1090,21 @@ body.skin-corvette .cu-dock { flex-shrink: 0; }
 .cu-brand-name {
   font-family: var(--cu-brand-font);
   font-weight: 900;
-  font-size: 11px;
+  font-size: clamp(10px, 1.5cqw, 11px);
   letter-spacing: 2px;
 }
-.cu-brand-sub { font-size: 9px; letter-spacing: 2px; color: var(--cu-dim); }
+.cu-brand-sub { font-size: clamp(8px, 1.2cqw, 9px); letter-spacing: 2px; color: var(--cu-dim); }
 
 .cu-meter {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: 1;
-  min-width: 170px;
-  max-width: 280px;
+  min-width: clamp(90px, 15cqw, 170px);
+  max-width: clamp(140px, 25cqw, 280px);
 }
 .cu-label {
-  font-size: 9px;
+  font-size: clamp(8px, 1.2cqw, 9px);
   letter-spacing: 1px;
   color: var(--cu-dim);
   text-transform: uppercase;
@@ -1123,8 +1124,8 @@ body.skin-corvette .cu-dock { flex-shrink: 0; }
 .cu-seg { flex: 1; background: rgba(255, 255, 255, 0.07); border-radius: 1px; }
 
 .cu-readout { display: flex; align-items: baseline; gap: 6px; }
-.cu-val { font-family: var(--cu-digit-font); font-size: 12px; white-space: nowrap; }
-.cu-unit { font-size: 9px; color: var(--cu-dim); }
+.cu-val { font-family: var(--cu-digit-font); font-size: clamp(11px, 1.5cqw, 12px); white-space: nowrap; }
+.cu-unit { font-size: clamp(8px, 1.2cqw, 9px); color: var(--cu-dim); }
 
 .claude-toggle {
   padding: 7px 12px;

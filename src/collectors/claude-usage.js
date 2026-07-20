@@ -21,24 +21,32 @@ function findActive(accounts) {
   return accounts[0]
 }
 
-function parseResetsMs(resetsAt) {
+function parseIsoMs(resetsAt) {
   if (!resetsAt) return null
   const ts = Date.parse(resetsAt)
-  if (!Number.isFinite(ts)) return null
-  return Math.max(0, ts - Date.now())
+  return Number.isFinite(ts) ? ts : null
 }
 
+// resetAt fields are absolute epoch-ms timestamps, not a pre-computed
+// remaining duration — the renderer recomputes the countdown against
+// Date.now() on its own faster tick, so it doesn't go stale between polls.
 function parseUsage(stdout) {
   const data = JSON.parse(stdout)
   const acct = findActive(data.accounts)
   if (!acct || !acct.usage) {
-    return { sessionPct: 0, weekPct: 0, resetMs: null, todayTokens: null }
+    return { sessionPct: 0, weekPct: 0, sessionResetAt: null, todayTokens: null, fable: null }
   }
+  const scoped = Array.isArray(acct.usage.scoped) ? acct.usage.scoped[0] : null
   return {
     sessionPct: Math.round((acct.usage.fiveHour && acct.usage.fiveHour.pct) || 0),
     weekPct: Math.round((acct.usage.sevenDay && acct.usage.sevenDay.pct) || 0),
-    resetMs: parseResetsMs(acct.usage.fiveHour && acct.usage.fiveHour.resetsAt),
+    sessionResetAt: parseIsoMs(acct.usage.fiveHour && acct.usage.fiveHour.resetsAt),
     todayTokens: null,
+    fable: scoped ? {
+      name: String(scoped.name || 'Fable').slice(0, 16),
+      pct: Math.round(scoped.pct || 0),
+      resetAt: parseIsoMs(scoped.resetsAt),
+    } : null,
   }
 }
 
@@ -64,8 +72,9 @@ function startClaudeUsage(onData) {
           ts: Date.now(),
           sessionPct: usage.sessionPct,
           weekPct: usage.weekPct,
-          resetMs: usage.resetMs,
+          sessionResetAt: usage.sessionResetAt,
           todayTokens: usage.todayTokens,
+          fable: usage.fable,
         })
       } catch (parseErr) {
         onData({ ok: false, ts: Date.now(), error: parseErr.message })

@@ -3,6 +3,7 @@ const os = require('os')
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
+const { execFile, spawn } = require('child_process')
 const {
   loadHosts, validate, DEFAULT_HOSTS,
   loadSavedHosts, saveHostList,
@@ -12,6 +13,16 @@ const { startHost } = require('./src/collectors/service')
 const { startClaudeUsage } = require('./src/collectors/claude-usage')
 const { startClaudeSwap } = require('./src/collectors/claude-swap')
 const { testConnect, execRemote } = require('./src/collectors/ssh')
+
+// cswap account-management: fixed argv arrays only, never shell-interpolated.
+// Same validation rules cswap itself enforces (see `cswap alias --help`).
+const CSWAP_NUM_RE = /^[0-9]+$/
+const CSWAP_ALIAS_RE = /^(?!\d+$)[a-zA-Z0-9._-]+$/
+const CSWAP_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function runCswapCmd(args, timeout, cb) {
+  execFile('cmd.exe', ['/c', 'cswap', ...args], { windowsHide: true, timeout, maxBuffer: 1024 * 1024 }, cb)
+}
 
 const isDev = process.argv.includes('--dev')
 const useMock = process.argv.includes('--mock')
@@ -94,7 +105,6 @@ function createWindow() {
     for (const h of hosts) startCollector(h)
     broadcastHostList()
 
-    process.env.GUITOP_DISPLAY_NAME = 'an80sPWNstar'
     claudeUsageHandle = startClaudeUsage((payload) => {
       if (win && !win.isDestroyed()) {
         win.webContents.send('claude-usage', payload)
@@ -107,6 +117,71 @@ function createWindow() {
     })
   })
 }
+
+ipcMain.handle('cswap-refresh', () => {
+  if (claudeSwapHandle) claudeSwapHandle.refresh()
+})
+
+ipcMain.handle('cswap-set-alias', (_e, number, alias) => new Promise((resolve) => {
+  if (!CSWAP_NUM_RE.test(String(number))) return resolve({ ok: false, error: 'invalid account number' })
+  if (!CSWAP_ALIAS_RE.test(String(alias))) return resolve({ ok: false, error: 'invalid alias' })
+  runCswapCmd(['alias', String(number), String(alias)], 15000, (err, stdout, stderr) => {
+    resolve(err ? { ok: false, error: (stderr || err.message).trim() } : { ok: true })
+  })
+}))
+
+ipcMain.handle('cswap-set-enabled', (_e, number, enabled) => new Promise((resolve) => {
+  if (!CSWAP_NUM_RE.test(String(number))) return resolve({ ok: false, error: 'invalid account number' })
+  runCswapCmd([enabled ? 'enable' : 'disable', String(number)], 15000, (err, stdout, stderr) => {
+    resolve(err ? { ok: false, error: (stderr || err.message).trim() } : { ok: true })
+  })
+}))
+
+ipcMain.handle('cswap-remove-account', (_e, number) => new Promise((resolve) => {
+  if (!CSWAP_NUM_RE.test(String(number))) return resolve({ ok: false, error: 'invalid account number' })
+  runCswapCmd(['remove', String(number)], 15000, (err, stdout, stderr) => {
+    resolve(err ? { ok: false, error: (stderr || err.message).trim() } : { ok: true })
+  })
+}))
+
+ipcMain.handle('cswap-add-current', (_e, { alias, slot } = {}) => new Promise((resolve) => {
+  const args = ['add']
+  if (alias) {
+    if (!CSWAP_ALIAS_RE.test(String(alias))) return resolve({ ok: false, error: 'invalid alias' })
+    args.push('--alias', String(alias))
+  }
+  if (slot) {
+    if (!CSWAP_NUM_RE.test(String(slot))) return resolve({ ok: false, error: 'invalid slot' })
+    args.push('--slot', String(slot))
+  }
+  runCswapCmd(args, 20000, (err, stdout, stderr) => {
+    resolve(err ? { ok: false, error: (stderr || err.message).trim() } : { ok: true })
+  })
+}))
+
+// Token/API key goes over stdin ('-'), never argv or logs — cswap reads it
+// itself and persists it in its own store; guiTOP never sees it again.
+ipcMain.handle('cswap-add-token', (_e, { token, email, alias, slot } = {}) => new Promise((resolve) => {
+  if (typeof token !== 'string' || !token.trim()) return resolve({ ok: false, error: 'token required' })
+  if (email && !CSWAP_EMAIL_RE.test(String(email))) return resolve({ ok: false, error: 'invalid email' })
+  if (alias && !CSWAP_ALIAS_RE.test(String(alias))) return resolve({ ok: false, error: 'invalid alias' })
+  if (slot && !CSWAP_NUM_RE.test(String(slot))) return resolve({ ok: false, error: 'invalid slot' })
+
+  const args = ['/c', 'cswap', 'add-token', '-']
+  if (email) args.push('--email', String(email))
+  if (alias) args.push('--alias', String(alias))
+  if (slot) args.push('--slot', String(slot))
+
+  const child = spawn('cmd.exe', args, { windowsHide: true })
+  let stderr = ''
+  child.stderr.on('data', (d) => { stderr += d })
+  child.on('error', (err) => resolve({ ok: false, error: err.message }))
+  child.on('close', (code) => {
+    resolve(code === 0 ? { ok: true } : { ok: false, error: stderr.trim() || `exit ${code}` })
+  })
+  child.stdin.write(token.trim() + '\n')
+  child.stdin.end()
+}))
 
 ipcMain.handle('get-hosts', () => activeHosts.map(h => h.label))
 
@@ -293,6 +368,15 @@ app.whenReady().then(() => {
         res.writeHead(500, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: false, error: String(err) }))
       }
+    } else if (req.url === '/debug/claude-config' && win && !win.isDestroyed()) {
+      const info = await win.webContents.executeJavaScript(`(() => {
+        try {
+          document.getElementById('claude-config-btn').click()
+          return { display: document.getElementById('claude-config-modal').style.display, rows: document.getElementById('cc-list').children.length }
+        } catch (e) { return { error: e.message + '\\n' + e.stack } }
+      })()`)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, info }))
     } else if (req.url === '/debug/gauges' && win && !win.isDestroyed()) {
       try {
         const info = await win.webContents.executeJavaScript(

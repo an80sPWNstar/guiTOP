@@ -15,7 +15,7 @@ const ClaudeUsageStrip = (() => {
   }
 
   function render() {
-    return `<div class="cu-strip"><div class="cu-brand"><span class="cu-brand-name">CLAUDE</span><span class="cu-brand-sub">USAGE</span></div>${meterHtml('Session', 'session')}${meterHtml('Week', 'week')}<div class="cu-readout"><span class="cu-label">Reset</span><span class="cu-val" data-role="reset">--</span></div><div class="cu-readout"><span class="cu-label">Tokens Today</span><span class="cu-val" data-role="tokens">--</span></div><div class="cu-div" data-role="swap-div"></div><div class="cu-accts" data-role="accts"></div><div class="cu-auto" data-role="auto"><span class="cu-dot" data-role="auto-dot"></span><span class="cu-label">Auto</span><span class="cu-val" data-role="auto-val">--</span></div></div>`
+    return `<div class="cu-strip"><div class="cu-brand"><span class="cu-brand-name">CLAUDE</span><span class="cu-brand-sub">USAGE</span></div>${meterHtml('Session', 'session')}${meterHtml('Week', 'week')}<div class="cu-readout"><span class="cu-label">Reset</span><span class="cu-val" data-role="reset">--</span></div><div class="cu-readout" data-role="fable-readout" style="display:none"><span class="cu-label" data-role="fable-label">Fable</span><span class="cu-val" data-role="fable-val">--</span><span class="cu-unit">%</span><span class="cu-val" data-role="fable-reset">--</span></div><div class="cu-readout"><span class="cu-label">Tokens Today</span><span class="cu-val" data-role="tokens">--</span></div><div class="cu-div" data-role="swap-div"></div><div class="cu-accts" data-role="accts"></div><div class="cu-auto" data-role="auto"><span class="cu-dot" data-role="auto-dot"></span><span class="cu-label">Auto</span><span class="cu-val" data-role="auto-val">--</span></div></div>`
   }
 
   function paintBar(track, pct, theme) {
@@ -55,9 +55,11 @@ const ClaudeUsageStrip = (() => {
     return theme.val
   }
 
-  function fmtReset(ms) {
-    if (ms == null) return '--'
-    const m = Math.max(0, Math.round(ms / 60000))
+  // resetAt is an absolute epoch-ms timestamp — recomputed against Date.now()
+  // on every call so repeated repaints (independent of the data poll) tick down live.
+  function fmtReset(resetAt) {
+    if (resetAt == null) return '--'
+    const m = Math.max(0, Math.round((resetAt - Date.now()) / 60000))
     return `${Math.floor(m / 60)}H ${m % 60}M`
   }
 
@@ -80,11 +82,14 @@ const ClaudeUsageStrip = (() => {
     const resetVal = root.querySelector('[data-role="reset"]')
     const tokensVal = root.querySelector('[data-role="tokens"]')
 
+    const fableReadout = root.querySelector('[data-role="fable-readout"]')
+
     if (!data || !data.ok) {
       sessionVal.textContent = '--'
       weekVal.textContent = '--'
       resetVal.textContent = '--'
       tokensVal.textContent = '--'
+      fableReadout.style.display = 'none'
       updateSwap(root, swap, t)
       return
     }
@@ -105,9 +110,26 @@ const ClaudeUsageStrip = (() => {
     weekVal.style.color = weekColor
     weekVal.style.textShadow = `0 0 6px ${weekColor}66`
 
-    resetVal.textContent = fmtReset(data.resetMs)
+    resetVal.textContent = fmtReset(data.sessionResetAt)
     resetVal.style.color = t.val
     resetVal.style.textShadow = `0 0 6px ${t.val}55`
+
+    if (data.fable) {
+      fableReadout.style.display = ''
+      const fableLabel = root.querySelector('[data-role="fable-label"]')
+      const fableVal = root.querySelector('[data-role="fable-val"]')
+      const fableReset = root.querySelector('[data-role="fable-reset"]')
+      fableLabel.textContent = data.fable.name
+      const fableColor = valColor(data.fable.pct, t)
+      fableVal.textContent = data.fable.pct
+      fableVal.style.color = fableColor
+      fableVal.style.textShadow = `0 0 6px ${fableColor}66`
+      fableReset.textContent = fmtReset(data.fable.resetAt)
+      fableReset.style.color = t.val
+      fableReset.style.textShadow = `0 0 6px ${t.val}55`
+    } else {
+      fableReadout.style.display = 'none'
+    }
 
     tokensVal.textContent = fmtTokens(data.todayTokens)
     tokensVal.style.color = t.val

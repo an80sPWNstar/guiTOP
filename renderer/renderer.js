@@ -2,6 +2,7 @@
 
 // Force-close any modals that Chromium's session restore may have left open
 document.getElementById('manage-hosts-modal').style.display = 'none'
+document.getElementById('claude-config-modal').style.display = 'none'
 
 const state = {
   hosts: [],
@@ -82,6 +83,118 @@ function renderClaudeStrip() {
   ClaudeUsageStrip.update(target, state.claudeUsage, state.skin, state.claudeSwap)
 }
 
+// ── Claude account management (native cswap: alias/enable/disable/remove/add) ──
+const claudeConfigBtn = document.getElementById('claude-config-btn')
+const claudeConfigModal = document.getElementById('claude-config-modal')
+const ccList = document.getElementById('cc-list')
+const ccEmpty = document.getElementById('cc-empty')
+const ccStatus = document.getElementById('cc-status')
+
+function ccShowStatus(msg, isError) {
+  ccStatus.textContent = msg
+  ccStatus.style.display = msg ? 'block' : 'none'
+  ccStatus.style.color = isError ? '' : 'var(--color-util, #3fc079)'
+}
+
+function renderAccountRows() {
+  const accounts = (state.claudeSwap && state.claudeSwap.accounts) || []
+  ccList.innerHTML = ''
+  ccEmpty.style.display = accounts.length === 0 ? 'block' : 'none'
+
+  for (const a of accounts) {
+    const row = document.createElement('div')
+    row.className = 'modal-label'
+    row.style.display = 'flex'
+    row.style.alignItems = 'center'
+    row.style.gap = '6px'
+
+    const tag = document.createElement('span')
+    tag.textContent = `#${a.number}`
+    tag.style.opacity = '0.6'
+    tag.style.whiteSpace = 'nowrap'
+
+    const input = document.createElement('input')
+    input.className = 'modal-input'
+    input.value = a.alias || ''
+    input.maxLength = 24
+    input.style.flex = '1'
+
+    const saveBtn = document.createElement('button')
+    saveBtn.className = 'modal-btn submit'
+    saveBtn.textContent = 'Save'
+    saveBtn.addEventListener('click', async () => {
+      const alias = input.value.trim()
+      if (!alias) return ccShowStatus('Alias cannot be empty', true)
+      const res = await window.guiTOP.cswapSetAlias(a.number, alias)
+      if (!res.ok) return ccShowStatus(res.error, true)
+      ccShowStatus(`Account #${a.number} alias set`, false)
+      await window.guiTOP.cswapRefresh()
+    })
+
+    const toggleBtn = document.createElement('button')
+    toggleBtn.className = 'modal-btn cancel'
+    toggleBtn.textContent = a.disabled ? 'Enable' : 'Disable'
+    toggleBtn.addEventListener('click', async () => {
+      const res = await window.guiTOP.cswapSetEnabled(a.number, !!a.disabled)
+      if (!res.ok) return ccShowStatus(res.error, true)
+      ccShowStatus(`Account #${a.number} ${a.disabled ? 'enabled' : 'disabled'}`, false)
+      await window.guiTOP.cswapRefresh()
+    })
+
+    const removeBtn = document.createElement('button')
+    removeBtn.className = 'modal-btn cancel'
+    removeBtn.textContent = 'Remove'
+    removeBtn.addEventListener('click', async () => {
+      if (!confirm(`Remove account #${a.number} (${a.alias})?`)) return
+      const res = await window.guiTOP.cswapRemoveAccount(a.number)
+      if (!res.ok) return ccShowStatus(res.error, true)
+      ccShowStatus(`Account #${a.number} removed`, false)
+      await window.guiTOP.cswapRefresh()
+    })
+
+    row.append(tag, input, saveBtn, toggleBtn, removeBtn)
+    ccList.appendChild(row)
+  }
+}
+
+claudeConfigBtn.addEventListener('click', () => {
+  ccShowStatus('', false)
+  renderAccountRows()
+  claudeConfigModal.style.display = 'flex'
+})
+
+document.getElementById('cc-close').addEventListener('click', () => {
+  claudeConfigModal.style.display = 'none'
+})
+
+document.getElementById('cc-add-token-btn').addEventListener('click', async () => {
+  const token = document.getElementById('cc-add-token').value
+  const email = document.getElementById('cc-add-email').value.trim()
+  const alias = document.getElementById('cc-add-alias').value.trim()
+  const slot = document.getElementById('cc-add-slot').value.trim()
+  if (!token.trim()) return ccShowStatus('Token is required', true)
+
+  const res = await window.guiTOP.cswapAddToken({ token, email, alias, slot })
+  if (!res.ok) return ccShowStatus(res.error, true)
+  document.getElementById('cc-add-token').value = ''
+  document.getElementById('cc-add-email').value = ''
+  document.getElementById('cc-add-alias').value = ''
+  document.getElementById('cc-add-slot').value = ''
+  ccShowStatus('Account added', false)
+  await window.guiTOP.cswapRefresh()
+})
+
+document.getElementById('cc-add-current-btn').addEventListener('click', async () => {
+  const alias = document.getElementById('cc-add-current-alias').value.trim()
+  const res = await window.guiTOP.cswapAddCurrent({ alias })
+  if (!res.ok) return ccShowStatus(res.error, true)
+  document.getElementById('cc-add-current-alias').value = ''
+  ccShowStatus('Current session registered as a new account', false)
+  await window.guiTOP.cswapRefresh()
+})
+
+
+
 claudeBtn.addEventListener('click', () => {
   const order = ['top', 'bottom', 'off']
   state.claudeDock = order[(order.indexOf(state.claudeDock) + 1) % order.length]
@@ -97,9 +210,14 @@ window.guiTOP.onClaudeUsage((payload) => {
 window.guiTOP.onClaudeSwap((payload) => {
   state.claudeSwap = payload
   renderClaudeStrip()
+  if (claudeConfigModal.style.display !== 'none') renderAccountRows()
 })
 
 renderClaudeStrip()
+
+// Reset countdowns are absolute timestamps from the collector (45s poll);
+// repaint on a faster independent tick so they count down live in between.
+setInterval(renderClaudeStrip, 30000)
 
 function skinModule() {
   if (state.skin === 'corvette') return { mod: GpuCardCorvette, cls: '.corvette-card', upd: 'update' }

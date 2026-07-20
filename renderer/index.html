@@ -16,10 +16,52 @@
       <option value="corvette">C4 Corvette</option>
     </select>
     <button id="claude-toggle" class="claude-toggle" title="Toggle Claude usage strip">CLAUDE <span class="cu-arrow"></span></button>
+    <button id="claude-config-btn" class="claude-toggle" title="Configure Claude account aliases">⚙</button>
     <button id="manage-hosts-btn" class="add-host-btn">Manage Hosts</button>
   </div>
 
   <div id="claude-strip-top" class="cu-dock cu-dock-top"></div>
+
+  <div id="claude-config-modal" class="modal-overlay" style="display:none">
+    <div class="modal-card" style="width:420px">
+      <div class="modal-title">Manage Claude Accounts</div>
+      <div id="cc-list" class="mh-list"></div>
+      <div id="cc-empty" class="dim-note" style="display:none">No cswap accounts detected yet.</div>
+
+      <hr style="margin:12px 0;border-color:var(--border-subtle, #333)">
+      <div class="modal-label" style="font-weight:600">Add via setup-token / API key</div>
+      <label class="modal-label">Token
+        <input id="cc-add-token" class="modal-input" type="password" placeholder="sk-ant-... or setup-token" />
+      </label>
+      <label class="modal-label">Email (optional)
+        <input id="cc-add-email" class="modal-input" placeholder="auto-generated if blank" />
+      </label>
+      <label class="modal-label">Alias (optional)
+        <input id="cc-add-alias" class="modal-input" placeholder="e.g. work" />
+      </label>
+      <label class="modal-label">Slot (optional)
+        <input id="cc-add-slot" class="modal-input" type="number" min="1" placeholder="auto" />
+      </label>
+      <div class="modal-buttons">
+        <button id="cc-add-token-btn" class="modal-btn submit" style="width:100%">Add via Token</button>
+      </div>
+
+      <hr style="margin:12px 0;border-color:var(--border-subtle, #333)">
+      <div class="modal-label" style="font-weight:600">Or register the account already logged in</div>
+      <div class="dim-note" style="margin:2px 0 8px">If you've already logged into a different account via <code>claude login</code> in a terminal, register that session here.</div>
+      <label class="modal-label">Alias (optional)
+        <input id="cc-add-current-alias" class="modal-input" placeholder="e.g. personal" />
+      </label>
+      <div class="modal-buttons">
+        <button id="cc-add-current-btn" class="modal-btn submit" style="width:100%">Register Current Session</button>
+      </div>
+
+      <div id="cc-status" class="modal-error" style="display:none;margin-top:10px"></div>
+      <div class="modal-buttons" style="margin-top:12px">
+        <button id="cc-close" class="modal-btn cancel">Close</button>
+      </div>
+    </div>
+  </div>
 
   <div id="manage-hosts-modal" class="modal-overlay" style="display:none">
     <div class="modal-card" style="width:420px">

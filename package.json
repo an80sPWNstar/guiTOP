@@ -1,6 +1,6 @@
 {
   "name": "guitop",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "guiTOP — a desktop GUI for NVIDIA GPU monitoring (local + multi-host over SSH)",
   "author": "an80sPWNstar <an80sPWNstar@users.noreply.github.com>",
   "main": "main.js",

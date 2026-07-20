@@ -1,5 +1,8 @@
 // Claude-swap (cswap CLI) account usage collector. cswap may not be installed;
 // this degrades gracefully and just reports ok: false in that case.
+// Aliases are cswap's own (`cswap alias <num> <name>`) — no local override
+// layer; account management (add/remove/alias/enable) goes through the real
+// CLI via IPC handlers in main.js, not a shadow config file.
 
 const { execFile } = require('child_process')
 
@@ -20,8 +23,6 @@ function clampPct(v) {
 }
 
 function accountAlias(a) {
-  const displayName = process.env.GUITOP_DISPLAY_NAME
-  if (displayName) return displayName.slice(0, 24)
   return String(a.alias || String(a.email || '').split('@')[0] || ('ACC' + a.number)).slice(0, 24)
 }
 
@@ -93,6 +94,7 @@ function startClaudeSwap(onData) {
   interval = setInterval(tick, POLL_MS)
 
   return {
+    refresh() { tick() },
     stop() {
       clearTimeout(firstTimer)
       clearInterval(interval)
