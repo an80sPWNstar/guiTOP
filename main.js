@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage } = require('electron')
+const { app, BrowserWindow, ipcMain, safeStorage, Menu, Tray } = require('electron')
 const os = require('os')
 const http = require('http')
 const fs = require('fs')
@@ -11,6 +11,7 @@ const {
 } = require('./src/config/hosts')
 const { startHost } = require('./src/collectors/service')
 const { startClaudeUsage } = require('./src/collectors/claude-usage')
+const { startClaudeUsageOAuth } = require('./src/collectors/claude-usage-oauth')
 const { startClaudeSwap } = require('./src/collectors/claude-swap')
 const { testConnect, execRemote } = require('./src/collectors/ssh')
 
@@ -25,21 +26,58 @@ function runCswapCmd(args, timeout, cb) {
 }
 
 const isDev = process.argv.includes('--dev')
-const useMock = process.argv.includes('--mock')
+// --mock-amd renders AMD-shaped mock data (deliberate gaps: no fan%, no power cap
+// on some cards) so the widgets can be checked against sparse AMD telemetry.
+const mockVendor = process.argv.includes('--mock-amd') ? 'amd' : 'nvidia'
+const useMock = process.argv.includes('--mock') || mockVendor === 'amd'
 const PRELOAD = path.join(__dirname, 'preload.js')
 
 let win = null
+let tray = null
+let isQuitting = false
 const activeHosts = []     // validated host entries
 const rawHosts = []        // raw configs (for persistence — no passwords)
 const hostHandles = {}     // { label: stopHandle }
 const hostPasswords = {}   // { label: password } — in memory only, never persisted
+const lastPayloads = {}    // { label: latest payload } — powers /gpu/backends
 let claudeUsageHandle = null
 let claudeSwapHandle = null
+let claudeOAuthHandle = null
+
+let useOAuthClaude = false
+
+const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json')
+
+function loadSettings() {
+  try { return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8')) }
+  catch { return { launchAtStartup: false, useOAuthClaude: false, minimizeToTray: false } }
+}
+
+function saveSettings(s) {
+  try { fs.writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2)) } catch {}
+}
 
 function broadcastHostList() {
   if (win && !win.isDestroyed()) {
     win.webContents.send('host-list', activeHosts.map(h => h.label))
   }
+}
+
+function createTray() {
+  tray = new Tray(path.join(__dirname, 'assets', 'images', 'app-icon.ico'))
+  tray.setToolTip('guiTOP')
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Show',   click: () => { if (win && !win.isDestroyed()) win.show() } },
+    { label: 'Hide',   click: () => { if (win && !win.isDestroyed()) win.hide() } },
+    { type: 'separator' },
+    { label: 'Settings', click: () => { if (win && !win.isDestroyed()) win.webContents.send('open-settings') } },
+    { type: 'separator' },
+    { label: 'Quit',   click: () => app.quit() },
+  ]))
+  tray.on('double-click', () => {
+    if (!win || win.isDestroyed()) return
+    win.isVisible() ? win.hide() : win.show()
+  })
 }
 
 function startCollector(hostEntry) {
@@ -52,10 +90,11 @@ function startCollector(hostEntry) {
     if (known[hk]) enriched.knownHostKey = known[hk]
   }
   hostHandles[hostEntry.label] = startHost(enriched, (payload) => {
+    lastPayloads[payload.host] = payload
     if (win && !win.isDestroyed()) {
       win.webContents.send('gpu-data', payload)
     }
-  }, { useMock })
+  }, { useMock, mockVendor })
 }
 
 function createWindow() {
@@ -73,6 +112,17 @@ function createWindow() {
 
   win.loadFile('renderer/index.html')
   if (isDev) win.webContents.openDevTools({ mode: 'detach' })
+
+  buildMenu()
+
+  win.on('close', (e) => {
+    if (isQuitting) return
+    const settings = loadSettings()
+    if (settings.minimizeToTray && tray) {
+      e.preventDefault()
+      win.hide()
+    }
+  })
 
   win.webContents.once('did-finish-load', () => {
     const saved = loadSavedHosts(app.getPath('userData'))
@@ -105,11 +155,19 @@ function createWindow() {
     for (const h of hosts) startCollector(h)
     broadcastHostList()
 
-    claudeUsageHandle = startClaudeUsage((payload) => {
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('claude-usage', payload)
-      }
-    })
+    // Apply saved settings before starting collectors
+    const settings = loadSettings()
+    useOAuthClaude = settings.useOAuthClaude || false
+
+    if (useOAuthClaude) {
+      claudeOAuthHandle = startClaudeUsageOAuth((payload) => {
+        if (win && !win.isDestroyed()) win.webContents.send('claude-usage', payload)
+      })
+    } else {
+      claudeUsageHandle = startClaudeUsage((payload) => {
+        if (win && !win.isDestroyed()) win.webContents.send('claude-usage', payload)
+      })
+    }
     claudeSwapHandle = startClaudeSwap((payload) => {
       if (win && !win.isDestroyed()) {
         win.webContents.send('claude-swap', payload)
@@ -303,8 +361,113 @@ ipcMain.handle('remove-host', (_e, label) => {
   return { ok: true }
 })
 
+// ── Settings IPC ────────────────────────────────
+ipcMain.handle('get-settings', () => loadSettings())
+
+ipcMain.handle('set-setting', (_e, key, value) => {
+  const s = loadSettings()
+  s[key] = value
+  saveSettings(s)
+  if (key === 'launchAtStartup') {
+    app.setLoginItemSettings({ openAtLogin: !!value })
+  }
+  if (key === 'useOAuthClaude') {
+    useOAuthClaude = !!value
+    // Restart Claude usage source
+    if (claudeUsageHandle) { claudeUsageHandle.stop(); claudeUsageHandle = null }
+    if (claudeOAuthHandle) { claudeOAuthHandle.stop(); claudeOAuthHandle = null }
+    if (useOAuthClaude) {
+      claudeOAuthHandle = startClaudeUsageOAuth((payload) => {
+        if (win && !win.isDestroyed()) win.webContents.send('claude-usage', payload)
+      })
+    } else {
+      claudeUsageHandle = startClaudeUsage((payload) => {
+        if (win && !win.isDestroyed()) win.webContents.send('claude-usage', payload)
+      })
+    }
+  }
+  return { ok: true }
+})
+
+ipcMain.handle('claude-oauth-status', () => {
+  if (claudeOAuthHandle) {
+    return { ...claudeOAuthHandle.status(), active: useOAuthClaude }
+  }
+  return { tokenPresent: false, lastOk: false, failCount: 0, active: false }
+})
+
+// ── Claude Web login IPC ────────────────────────
+ipcMain.handle('claude:login', async () => {
+  try {
+    const cw = require('./src/collectors/claude-web')
+    const result = await cw.login()
+    return result
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+ipcMain.handle('claude:logout', async () => {
+  try {
+    const cw = require('./src/collectors/claude-web')
+    await cw.logout()
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+})
+
+ipcMain.handle('claude:status', () => {
+  try {
+    const cw = require('./src/collectors/claude-web')
+    return cw.status()
+  } catch {
+    return { loggedIn: false, organizationId: null }
+  }
+})
+
+function buildMenu() {
+  const template = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Settings',
+          accelerator: 'CmdOrCtrl+,',
+          click() { if (win && !win.isDestroyed()) win.webContents.send('open-settings') },
+        },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+  ]
+  const menu = Menu.buildFromTemplate(template)
+  Menu.setApplicationMenu(menu)
+}
+
 app.whenReady().then(() => {
   createWindow()
+  createTray()
+
+  // Apply saved settings
+  const settings = loadSettings()
+  if (settings.launchAtStartup) {
+    app.setLoginItemSettings({ openAtLogin: true })
+  }
+  useOAuthClaude = settings.useOAuthClaude || false
 
   // Dev screenshot server — GET http://localhost:17580/screenshot → saves PNG, returns path
   const SCREENSHOT_PORT = 17580
@@ -368,6 +531,24 @@ app.whenReady().then(() => {
         res.writeHead(500, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: false, error: String(err) }))
       }
+    } else if (req.url === '/gpu/backends') {
+      // Which collector backend each host resolved to, plus what it produced.
+      // First stop when an AMD host shows nothing: tells you whether detection
+      // picked amd-smi, rocm-smi or bare sysfs (sysfs has no process list).
+      const hosts = Object.entries(lastPayloads).map(([label, p]) => ({
+        host: label,
+        ok: p.ok,
+        error: p.error,
+        warning: p.warning || null,
+        backends: p.backends || [],
+        gpus: p.gpus.map(g => ({
+          index: g.index, nativeIndex: g.nativeIndex, vendor: g.vendor, name: g.name,
+          nulls: ['utilization', 'memoryUsed', 'memoryTotal', 'temperature', 'powerDraw', 'powerLimit', 'fanSpeed', 'clockSm'].filter(k => g[k] == null),
+        })),
+        processCount: p.processes.length,
+      }))
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, hosts }, null, 2))
     } else if (req.url === '/debug/claude-config' && win && !win.isDestroyed()) {
       const info = await win.webContents.executeJavaScript(`(() => {
         try {
@@ -377,6 +558,42 @@ app.whenReady().then(() => {
       })()`)
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ ok: true, info }))
+    } else if (req.url === '/debug/strip' && win && !win.isDestroyed()) {
+      // Geometry check for the Claude usage strip: reports any pair of leaf
+      // elements whose boxes actually intersect. Text that is shrunk below its
+      // content width overflows and collides — this catches it numerically.
+      const info = await win.webContents.executeJavaScript(`(() => {
+        // A strip exists in both the top and bottom dock; only one is visible.
+        const strips = Array.from(document.querySelectorAll('.cu-strip'))
+        const strip = strips.find(el => el.getBoundingClientRect().width > 0)
+        if (!strip) return { error: 'no visible .cu-strip', stripsInDom: strips.length }
+        const leaves = Array.from(strip.querySelectorAll('*')).filter(el => {
+          if (el.children.length > 0) return false
+          if (!el.offsetParent && el.offsetWidth === 0) return false
+          const r = el.getBoundingClientRect()
+          return r.width > 0 && r.height > 0
+        })
+        const desc = (el) => (el.className || el.tagName) + (el.dataset.role ? '[' + el.dataset.role + ']' : '') + (el.textContent ? ' "' + el.textContent.trim().slice(0, 14) + '"' : '')
+        const overlaps = []
+        for (let i = 0; i < leaves.length; i++) {
+          for (let j = i + 1; j < leaves.length; j++) {
+            const a = leaves[i].getBoundingClientRect(), b = leaves[j].getBoundingClientRect()
+            if (leaves[i].contains(leaves[j]) || leaves[j].contains(leaves[i])) continue
+            const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+            const oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+            if (ox > 1 && oy > 1) overlaps.push({ a: desc(leaves[i]), b: desc(leaves[j]), ox: Math.round(ox), oy: Math.round(oy) })
+          }
+        }
+        const sr = strip.getBoundingClientRect()
+        return {
+          stripWidth: Math.round(sr.width), stripHeight: Math.round(sr.height),
+          innerWidth: window.innerWidth, leaves: leaves.length,
+          overflowsRight: leaves.filter(el => el.getBoundingClientRect().right > sr.right + 1).map(desc),
+          overlapCount: overlaps.length, overlaps: overlaps.slice(0, 12),
+        }
+      })()`)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, info }, null, 2))
     } else if (req.url === '/debug/gauges' && win && !win.isDestroyed()) {
       try {
         const info = await win.webContents.executeJavaScript(
@@ -457,10 +674,15 @@ app.whenReady().then(() => {
   }).listen(SCREENSHOT_PORT)
 })
 
-app.on('window-all-closed', () => app.quit())
+app.on('window-all-closed', () => {
+  const s = loadSettings()
+  if (!s.minimizeToTray || !tray) app.quit()
+})
 
 app.on('before-quit', () => {
+  isQuitting = true
   for (const h of Object.values(hostHandles)) h.stop()
   if (claudeUsageHandle) claudeUsageHandle.stop()
   if (claudeSwapHandle) claudeSwapHandle.stop()
+  if (claudeOAuthHandle) claudeOAuthHandle.stop()
 })

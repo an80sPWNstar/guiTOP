@@ -9,13 +9,14 @@ const ClaudeUsageStrip = (() => {
   }
   const SEG_COUNT = 20
 
-  function meterHtml(label, role) {
+  function meterHtml(label, role, resetRole) {
     const segs = '<div class="cu-seg"></div>'.repeat(SEG_COUNT)
-    return `<div class="cu-meter"><span class="cu-label">${label}</span><div class="cu-track" data-role="${role}">${segs}</div><span class="cu-val" data-role="${role}-val">--</span><span class="cu-unit">%</span></div>`
+    const reset = resetRole ? `<span class="cu-readout cu-readout-inline"><span class="cu-label">${resetRole === 'reset' ? '5H' : '7D'}</span><span class="cu-val" data-role="${resetRole}">--</span></span>` : ''
+    return `<div class="cu-meter"><span class="cu-label">${label}</span><div class="cu-track" data-role="${role}">${segs}</div><span class="cu-val" data-role="${role}-val">--</span><span class="cu-unit">%</span>${reset}</div>`
   }
 
   function render() {
-    return `<div class="cu-strip"><div class="cu-brand"><span class="cu-brand-name">CLAUDE</span><span class="cu-brand-sub">USAGE</span></div>${meterHtml('Session', 'session')}${meterHtml('Week', 'week')}<div class="cu-readout"><span class="cu-label">Reset</span><span class="cu-val" data-role="reset">--</span></div><div class="cu-readout" data-role="fable-readout" style="display:none"><span class="cu-label" data-role="fable-label">Fable</span><span class="cu-val" data-role="fable-val">--</span><span class="cu-unit">%</span><span class="cu-val" data-role="fable-reset">--</span></div><div class="cu-readout"><span class="cu-label">Tokens Today</span><span class="cu-val" data-role="tokens">--</span></div><div class="cu-div" data-role="swap-div"></div><div class="cu-accts" data-role="accts"></div><div class="cu-auto" data-role="auto"><span class="cu-dot" data-role="auto-dot"></span><span class="cu-label">Auto</span><span class="cu-val" data-role="auto-val">--</span></div></div>`
+    return `<div class="cu-strip"><div class="cu-brand"><span class="cu-brand-name">CLAUDE</span><span class="cu-brand-sub">USAGE</span></div>${meterHtml('Session', 'session', 'reset')}${meterHtml('Week', 'week', 'week-reset')}<div class="cu-readout" data-role="fable-readout" style="display:none"><span class="cu-label" data-role="fable-label">Fable</span><span class="cu-val" data-role="fable-val">--</span><span class="cu-unit">%</span><span class="cu-val" data-role="fable-reset">--</span></div><div class="cu-readout"><span class="cu-label">Tokens Today</span><span class="cu-val" data-role="tokens">--</span></div><div class="cu-div" data-role="swap-div"></div><div class="cu-accts" data-role="accts"></div><div class="cu-auto" data-role="auto"><span class="cu-dot" data-role="auto-dot"></span><span class="cu-label">Auto</span><span class="cu-val" data-role="auto-val">--</span></div></div>`
   }
 
   function paintBar(track, pct, theme) {
@@ -80,6 +81,7 @@ const ClaudeUsageStrip = (() => {
     const sessionVal = root.querySelector('[data-role="session-val"]')
     const weekVal = root.querySelector('[data-role="week-val"]')
     const resetVal = root.querySelector('[data-role="reset"]')
+    const weekResetVal = root.querySelector('[data-role="week-reset"]')
     const tokensVal = root.querySelector('[data-role="tokens"]')
 
     const fableReadout = root.querySelector('[data-role="fable-readout"]')
@@ -88,6 +90,7 @@ const ClaudeUsageStrip = (() => {
       sessionVal.textContent = '--'
       weekVal.textContent = '--'
       resetVal.textContent = '--'
+      weekResetVal.textContent = '--'
       tokensVal.textContent = '--'
       fableReadout.style.display = 'none'
       updateSwap(root, swap, t)
@@ -113,6 +116,10 @@ const ClaudeUsageStrip = (() => {
     resetVal.textContent = fmtReset(data.sessionResetAt)
     resetVal.style.color = t.val
     resetVal.style.textShadow = `0 0 6px ${t.val}55`
+
+    weekResetVal.textContent = fmtReset(data.weekResetAt)
+    weekResetVal.style.color = t.val
+    weekResetVal.style.textShadow = `0 0 6px ${t.val}55`
 
     if (data.fable) {
       fableReadout.style.display = ''

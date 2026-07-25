@@ -34,13 +34,14 @@ function parseUsage(stdout) {
   const data = JSON.parse(stdout)
   const acct = findActive(data.accounts)
   if (!acct || !acct.usage) {
-    return { sessionPct: 0, weekPct: 0, sessionResetAt: null, todayTokens: null, fable: null }
+    return { sessionPct: 0, weekPct: 0, sessionResetAt: null, weekResetAt: null, todayTokens: null, fable: null }
   }
   const scoped = Array.isArray(acct.usage.scoped) ? acct.usage.scoped[0] : null
   return {
     sessionPct: Math.round((acct.usage.fiveHour && acct.usage.fiveHour.pct) || 0),
     weekPct: Math.round((acct.usage.sevenDay && acct.usage.sevenDay.pct) || 0),
     sessionResetAt: parseIsoMs(acct.usage.fiveHour && acct.usage.fiveHour.resetsAt),
+    weekResetAt: parseIsoMs(acct.usage.sevenDay && acct.usage.sevenDay.resetsAt),
     todayTokens: null,
     fable: scoped ? {
       name: String(scoped.name || 'Fable').slice(0, 16),
@@ -73,6 +74,7 @@ function startClaudeUsage(onData) {
           sessionPct: usage.sessionPct,
           weekPct: usage.weekPct,
           sessionResetAt: usage.sessionResetAt,
+          weekResetAt: usage.weekResetAt,
           todayTokens: usage.todayTokens,
           fable: usage.fable,
         })

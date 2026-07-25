@@ -1,6 +1,6 @@
 {
   "name": "guitop",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "guiTOP — a desktop GUI for NVIDIA GPU monitoring (local + multi-host over SSH)",
   "author": "an80sPWNstar <an80sPWNstar@users.noreply.github.com>",
   "main": "main.js",
@@ -9,8 +9,10 @@
     "dev": "electron . --dev",
     "build": "electron-builder --win",
     "build:dir": "electron-builder --win --dir",
-    "build:win": "powershell.exe -Command \"Set-Location $PWD; npm run build\"",
-    "build:linux": "electron-builder --linux"
+    "build:win": "cmd.exe /c \"$(wslpath -w .)\\build-win.bat\"",
+    "build:linux": "electron-builder --linux",
+    "test": "node test/run.js",
+    "probe": "node tools/gpu-probe.js"
   },
   "devDependencies": {
     "electron": "^31.7.7",
@@ -35,7 +37,10 @@
       "target": "nsis"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Utility"
     },
     "nsis": {

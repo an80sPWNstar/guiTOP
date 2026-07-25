@@ -551,8 +551,10 @@ const GpuCardCorvette = (() => {
     // PWR bar
     const pwrSegs = cardEl.querySelectorAll('[data-role="pwr-seg"]')
     const pwrDigits = cardEl.querySelector('[data-role="pwr-digits"]')
-    if (pDraw != null && pLimit) {
-      const pwrPct = Math.round(pDraw / pLimit * 100)
+    // Many AMD cards report draw but no power cap — show the wattage anyway and
+    // scale the bar against a nominal ceiling rather than blanking the readout.
+    if (pDraw != null) {
+      const pwrPct = Math.round(pDraw / (pLimit || 350) * 100)
       applySegBar(pwrSegs, pwrPct, '#c8a018', '#e6c04a')
       if (pwrDigits) pwrDigits.textContent = Math.round(pDraw)
     } else {

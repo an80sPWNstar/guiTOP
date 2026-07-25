@@ -167,6 +167,125 @@ document.getElementById('cc-close').addEventListener('click', () => {
   claudeConfigModal.style.display = 'none'
 })
 
+// ── Settings modal ──────────────────────────────
+const settingsModal = document.getElementById('settings-modal')
+settingsModal.style.display = 'none' // guard: never auto-open on launch
+const launchStartup = document.getElementById('setting-launch-startup')
+const minimizeTray = document.getElementById('setting-minimize-tray')
+const cswapRadio = document.getElementById('setting-claude-cswap')
+const oauthRadio = document.getElementById('setting-claude-oauth')
+const oauthStatus = document.getElementById('claude-oauth-status')
+const claudeFeedback = document.getElementById('setting-claude-feedback')
+const claudeWebStatus = document.getElementById('claude-web-status')
+const claudeLoginBtn = document.getElementById('setting-claude-login')
+const claudeLogoutBtn = document.getElementById('setting-claude-logout')
+
+let claudeFeedbackTimer = null
+
+function showFeedback(msg, ok) {
+  claudeFeedback.textContent = msg
+  claudeFeedback.style.color = ok ? 'var(--color-ok, #3fc079)' : ''
+  claudeFeedback.style.display = 'block'
+  clearTimeout(claudeFeedbackTimer)
+  claudeFeedbackTimer = setTimeout(() => { claudeFeedback.style.display = 'none' }, 3000)
+}
+
+async function loadSettingsUI() {
+  const s = await window.guiTOP.getSettings()
+  launchStartup.checked = !!s.launchAtStartup
+  minimizeTray.checked = !!s.minimizeToTray
+  if (s.useOAuthClaude) {
+    oauthRadio.checked = true
+  } else {
+    cswapRadio.checked = true
+  }
+  updateOAuthStatus()
+  updateClaudeWebUI()
+}
+
+async function updateOAuthStatus() {
+  const st = await window.guiTOP.getClaudeOAuthStatus()
+  if (st.tokenPresent) {
+    oauthStatus.textContent = '✓ OAuth token found' + (st.lastOk ? '' : ' (awaiting first poll)')
+    oauthStatus.style.color = 'var(--color-ok, #3fc079)'
+  } else {
+    oauthStatus.textContent = 'No OAuth token — use cswap or log in via Claude Code'
+    oauthStatus.style.color = ''
+  }
+}
+
+async function updateClaudeWebUI() {
+  const st = await window.guiTOP.claudeWebStatus()
+  if (st && st.loggedIn) {
+    claudeWebStatus.textContent = '✓ Logged in to claude.ai' + (st.organizationId ? ' (' + st.organizationId.slice(0, 12) + ')' : '')
+    claudeWebStatus.style.color = 'var(--color-ok, #3fc079)'
+    claudeLoginBtn.style.display = 'none'
+    claudeLogoutBtn.style.display = ''
+  } else {
+    claudeWebStatus.textContent = 'Not logged in'
+    claudeWebStatus.style.color = ''
+    claudeLoginBtn.style.display = ''
+    claudeLogoutBtn.style.display = 'none'
+  }
+}
+
+window.guiTOP.onOpenSettings(async () => {
+  await loadSettingsUI()
+  settingsModal.style.display = 'flex'
+})
+
+document.getElementById('settings-close').addEventListener('click', () => {
+  settingsModal.style.display = 'none'
+})
+
+launchStartup.addEventListener('change', async () => {
+  await window.guiTOP.setSetting('launchAtStartup', launchStartup.checked)
+})
+
+minimizeTray.addEventListener('change', async () => {
+  await window.guiTOP.setSetting('minimizeToTray', minimizeTray.checked)
+})
+
+cswapRadio.addEventListener('change', async () => {
+  if (!cswapRadio.checked) return
+  await window.guiTOP.setSetting('useOAuthClaude', false)
+  showFeedback('Switched to cswap (CLI) usage data', true)
+})
+
+oauthRadio.addEventListener('change', async () => {
+  if (!oauthRadio.checked) return
+  await window.guiTOP.setSetting('useOAuthClaude', true)
+  showFeedback('Switched to OAuth (Anthropic API) usage data', true)
+})
+
+claudeLoginBtn.addEventListener('click', async () => {
+  claudeLoginBtn.textContent = 'Logging in...'
+  claudeLoginBtn.disabled = true
+  try {
+    const result = await window.guiTOP.claudeLogin()
+    if (result && result.success) {
+      showFeedback('Logged in to claude.ai successfully', true)
+      updateClaudeWebUI()
+    } else {
+      showFeedback('Login failed: ' + ((result && result.error) || 'unknown error'), false)
+    }
+  } catch (err) {
+    showFeedback('Login error: ' + (err.message || err), false)
+  }
+  claudeLoginBtn.textContent = 'Log in to Claude'
+  claudeLoginBtn.disabled = false
+})
+
+claudeLogoutBtn.addEventListener('click', async () => {
+  try {
+    await window.guiTOP.claudeLogout()
+    showFeedback('Logged out of claude.ai', true)
+    updateClaudeWebUI()
+  } catch (err) {
+    showFeedback('Logout error: ' + (err.message || err), false)
+  }
+})
+
 document.getElementById('cc-add-token-btn').addEventListener('click', async () => {
   const token = document.getElementById('cc-add-token').value
   const email = document.getElementById('cc-add-email').value.trim()

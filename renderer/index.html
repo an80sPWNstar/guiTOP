@@ -114,6 +114,54 @@
 
   <div id="claude-strip-bottom" class="cu-dock cu-dock-bottom"></div>
 
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal-overlay" style="display:none">
+    <div class="modal-card" style="width:400px">
+      <div class="modal-title">Settings</div>
+
+      <div class="modal-label" style="margin-top:8px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input id="setting-launch-startup" type="checkbox" />
+          Launch at startup
+        </label>
+      </div>
+
+      <div class="modal-label">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input id="setting-minimize-tray" type="checkbox" />
+          Minimize to tray on close
+        </label>
+      </div>
+
+      <hr style="margin:12px 0;border-color:var(--border-subtle, #333)" />
+
+      <div class="modal-label" style="font-weight:600;margin-bottom:6px">Claude Usage Source</div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px">
+        <input id="setting-claude-cswap" type="radio" name="claude-source" value="cswap" checked />
+        cswap (CLI)
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px">
+        <input id="setting-claude-oauth" type="radio" name="claude-source" value="oauth" />
+        OAuth (Anthropic API)
+      </label>
+      <div id="claude-oauth-status" class="dim-note" style="margin:2px 0 0 24px;font-size:11px">Checking...</div>
+      <div id="setting-claude-feedback" class="dim-note" style="margin:2px 0 0 24px;font-size:11px;display:none"></div>
+
+      <hr style="margin:12px 0;border-color:var(--border-subtle, #333)" />
+
+      <div class="modal-label" style="font-weight:600;margin-bottom:6px">Claude Login (Cookie-based)</div>
+      <div id="claude-web-status" class="dim-note" style="margin-bottom:6px">Not logged in</div>
+      <div class="modal-buttons" style="gap:6px">
+        <button id="setting-claude-login" class="modal-btn submit">Log in to Claude</button>
+        <button id="setting-claude-logout" class="modal-btn cancel" style="display:none">Log out</button>
+      </div>
+
+      <div class="modal-buttons" style="margin-top:16px">
+        <button id="settings-close" class="modal-btn cancel">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div class="status-bar">
     <span id="status-text">Waiting for data...</span>
   </div>

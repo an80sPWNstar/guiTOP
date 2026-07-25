@@ -25,6 +25,7 @@ function parseGpus(csvText) {
         powerLimit: num(fields[8]),
         fanSpeed: num(fields[9]),
         clockSm: num(fields[10]),
+        vendor: "nvidia",
       };
     });
 }

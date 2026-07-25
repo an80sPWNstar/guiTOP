@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('guiTOP', {
   onClaudeUsage: (cb) => ipcRenderer.on('claude-usage', (_e, data) => cb(data)),
   onClaudeSwap: (cb) => ipcRenderer.on('claude-swap', (_e, data) => cb(data)),
   onHostList: (cb) => ipcRenderer.on('host-list', (_e, hosts) => cb(hosts)),
+  onOpenSettings: (cb) => ipcRenderer.on('open-settings', () => cb()),
   getHosts: () => ipcRenderer.invoke('get-hosts'),
   addHost: (config) => ipcRenderer.invoke('add-host', config),
   removeHost: (label) => ipcRenderer.invoke('remove-host', label),
@@ -15,4 +16,10 @@ contextBridge.exposeInMainWorld('guiTOP', {
   cswapRemoveAccount: (number) => ipcRenderer.invoke('cswap-remove-account', number),
   cswapAddCurrent: (opts) => ipcRenderer.invoke('cswap-add-current', opts),
   cswapAddToken: (opts) => ipcRenderer.invoke('cswap-add-token', opts),
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
+  getClaudeOAuthStatus: () => ipcRenderer.invoke('claude-oauth-status'),
+  claudeLogin: () => ipcRenderer.invoke('claude:login'),
+  claudeLogout: () => ipcRenderer.invoke('claude:logout'),
+  claudeWebStatus: () => ipcRenderer.invoke('claude:status'),
 })

@@ -1063,7 +1063,9 @@ body.skin-corvette {
   --cu-digit-font: 'DSEG14-Classic', monospace;
 }
 
-.cu-dock { display: none; }
+/* The dock is the query container for the strip itself: an element cannot query
+   its OWN container, so .cu-strip's gap/padding cqw units resolve here. */
+.cu-dock { display: none; container-type: inline-size; }
 .cu-dock-bottom {
   position: fixed;
   left: 0;
@@ -1086,6 +1088,19 @@ body.skin-corvette .cu-dock { flex-shrink: 0; }
 .cu-dock-top .cu-strip { border-bottom: 1px solid var(--cu-border); }
 .cu-dock-bottom .cu-strip { border-top: 1px solid var(--cu-border); }
 
+/* Text in the strip must never shrink below its own content — a shrunk nowrap
+   span overflows its box and lands on top of the next item. Only .cu-track is
+   allowed to absorb the squeeze; past that the strip wraps to a second row. */
+.cu-brand,
+.cu-readout,
+.cu-accts,
+.cu-auto { flex-shrink: 0; }
+.cu-label,
+.cu-val,
+.cu-unit,
+.cu-brand-name,
+.cu-brand-sub { flex-shrink: 0; }
+
 .cu-brand { display: flex; align-items: baseline; gap: 8px; }
 .cu-brand-name {
   font-family: var(--cu-brand-font);
@@ -1099,9 +1114,11 @@ body.skin-corvette .cu-dock { flex-shrink: 0; }
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
-  min-width: clamp(90px, 15cqw, 170px);
-  max-width: clamp(140px, 25cqw, 280px);
+  flex: 1 1 auto;
+  /* min-content keeps the label + digits + countdown at full size and lets the
+     meter wrap instead of crushing them. */
+  min-width: min-content;
+  max-width: clamp(180px, 30cqw, 340px);
 }
 .cu-label {
   font-size: clamp(8px, 1.2cqw, 9px);
@@ -1111,7 +1128,8 @@ body.skin-corvette .cu-dock { flex-shrink: 0; }
   white-space: nowrap;
 }
 .cu-track {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 36px; /* bar stays legible; it shrinks before any text does */
   display: flex;
   gap: 2px;
   height: 11px;
@@ -1124,6 +1142,7 @@ body.skin-corvette .cu-dock { flex-shrink: 0; }
 .cu-seg { flex: 1; background: rgba(255, 255, 255, 0.07); border-radius: 1px; }
 
 .cu-readout { display: flex; align-items: baseline; gap: 6px; }
+.cu-readout-inline { gap: 3px; font-size: clamp(8px, 1cqw, 9px); white-space: nowrap; flex-shrink: 0; }
 .cu-val { font-family: var(--cu-digit-font); font-size: clamp(11px, 1.5cqw, 12px); white-space: nowrap; }
 .cu-unit { font-size: clamp(8px, 1.2cqw, 9px); color: var(--cu-dim); }
 
@@ -1156,7 +1175,9 @@ body.skin-corvette .cu-dock { flex-shrink: 0; }
   border: 1px solid var(--cu-border);
   background: rgba(255, 255, 255, 0.03);
 }
+.cu-chip { flex-shrink: 0; }
 .cu-chip-label {
+  white-space: nowrap;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 1px;
