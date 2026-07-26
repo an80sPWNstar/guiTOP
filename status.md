@@ -4,9 +4,9 @@ _Last updated: 2026-07-25 v0.3.1. Read this + `CLAUDE.md` once at session start.
 
 ## RESUME HERE — open item
 
-**A v0.3.2 release is not built or pushed yet.** The AMD fixes below are committed locally
-and verified, but the friend testing on real AMD hardware is still running v0.3.1, which
-shows his machine as a **dead host**. He needs a new build to see anything at all.
+**v0.3.2 is shipped.** Waiting on the AMD tester to confirm his machine now appears. He was on
+v0.3.1, which showed his box as a dead host; send him
+https://github.com/an80sPWNstar/guiTOP/releases/tag/v0.3.2 if he has not been told.
 
 Remaining validation gap: the **amd-smi** and **rocm-smi** parsers have still never run
 against real hardware. The capture we got had `amd-smi` absent and `rocm-smi` aborting, so
@@ -45,7 +45,7 @@ Also deferred (do these together in one release, per user):
 
 ## Current State
 
-### Unreleased — AMD fixes from the first real-hardware capture (this session)
+### v0.3.2 — AMD fixes from the first real-hardware capture (this session)
 - Backend detection no longer suppresses fallbacks. `vendor.js` reports every backend found;
   `service.js` groups them into slots (one slot = one set of cards = one winning backend) and
   walks each slot best-first, keeping the first backend that actually returns a card. Winner
@@ -114,6 +114,10 @@ Also deferred (do these together in one release, per user):
   REMOTE SSH host still reports GPUs (that exercises ssh2/cpu-features).
 - **`--mock-amd`** feeds AMD-shaped mock data with deliberate gaps (no fan%, no power cap on some
   cards) to test the UI against sparse telemetry without AMD hardware.
+- **DRY corrupts literals when delegating prose to a local LLM.** Release notes came back with
+  `gpu-prove.js`, `guiTOP Setup 0.2.exe` — filenames mangled because `dry_multiplier` penalises
+  repeated token runs. Any output containing exact filenames, versions or flags must be generated
+  with DRY off (temp 0), same rule the global CLAUDE.md already gives for code.
 
 ## Disk Layout
 - **Source**: `E:\vs_code_projects\guiTOP\`
@@ -121,9 +125,9 @@ Also deferred (do these together in one release, per user):
 - **GitHub**: `an80sPWNstar/guiTOP` — **PUBLIC** as of 2026-07-25 (user confirmed intentional)
 - **gh CLI**: installed at `C:\Program Files\GitHub CLI\gh`, authed via `GH_TOKEN` env (scope
   `repo`). Use it for releases — the GitHub MCP tools have no release endpoints.
-- **Build output**: `dist\guiTOP Setup 0.3.1.exe` (75MB), `dist/guiTOP-0.3.1.AppImage` (103MB),
-  `dist/guitop_0.3.1_amd64.deb` (71MB). All unsigned.
-- **Release**: https://github.com/an80sPWNstar/guiTOP/releases/tag/v0.3.1
+- **Build output**: `dist\guiTOP Setup 0.3.2.exe` (75MB), `dist/guiTOP-0.3.2.AppImage` (103MB),
+  `dist/guitop_0.3.2_amd64.deb` (71MB). All unsigned.
+- **Release**: https://github.com/an80sPWNstar/guiTOP/releases/tag/v0.3.2
 
 ## Git
 ```
