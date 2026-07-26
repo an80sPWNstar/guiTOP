@@ -14,7 +14,11 @@ const { execFile } = require('child_process')
 const STATIC_CMD = 'amd-smi static --json'
 const METRIC_CMD = 'amd-smi metric --json'
 const PROC_CMD = 'amd-smi process --json'
-const ROCM_CMD = 'rocm-smi --showallinfo --json'
+// --showallinfo also pulls the overdrive clock/voltage table, and on ROCm 7.2 that
+// aborts the whole process (assertion in get_od_clk_volt_info). We parse nothing
+// from that table, so ask only for the fields parseRocmSmi actually reads.
+const ROCM_FLAGS = ['--showproductname', '--showuniqueid', '--showuse', '--showmeminfo', 'vram', '--showtemp', '--showpower', '--showmaxpower', '--showfan', '--showclocks']
+const ROCM_CMD = `rocm-smi ${ROCM_FLAGS.join(' ')} --json`
 
 function staticArgs() {
   return ['static', '--json']
@@ -29,7 +33,7 @@ function procArgs() {
 }
 
 function rocmArgs() {
-  return ['--showallinfo', '--json']
+  return [...ROCM_FLAGS, '--json']
 }
 
 function execLocal(args) {

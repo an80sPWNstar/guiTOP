@@ -16,6 +16,24 @@ const BACKEND_MAP = {
   'amdgpu': 'amd-sysfs'
 }
 
+// Every AMD backend that is present is reported, best first -- a tool being
+// installed does not mean it works. Real box: rocm-smi present but aborting,
+// while sysfs had complete telemetry. The caller falls down this list.
+//
+// sysfs outranks rocm-smi deliberately: it exposes the same fields we parse,
+// costs a file read instead of a python process every second, and does not
+// shift its JSON schema between ROCm releases. Neither reports processes.
+const AMD_PRIORITY = ['amd-smi', 'amd-sysfs', 'rocm-smi']
+
+function orderBackends(found) {
+  const result = []
+  if (found.has('nvidia')) result.push('nvidia')
+  for (const b of AMD_PRIORITY) {
+    if (found.has(b)) result.push(b)
+  }
+  return result
+}
+
 function parseBackends(stdout) {
   const lines = stdout.split('\n')
   const found = new Set()
@@ -29,20 +47,7 @@ function parseBackends(stdout) {
     }
   }
 
-  const result = []
-  if (found.has('nvidia')) {
-    result.push('nvidia')
-  }
-
-  if (found.has('amd-smi')) {
-    result.push('amd-smi')
-  } else if (found.has('rocm-smi')) {
-    result.push('rocm-smi')
-  } else if (found.has('amd-sysfs')) {
-    result.push('amd-sysfs')
-  }
-
-  return result
+  return orderBackends(found)
 }
 
 async function probeLocal() {
@@ -87,20 +92,13 @@ async function probeLocal() {
     }
   }
 
-  const result = []
-  if (hasNvidia) {
-    result.push('nvidia')
-  }
+  const found = new Set()
+  if (hasNvidia) found.add('nvidia')
+  if (hasAmdSmi) found.add('amd-smi')
+  if (hasRocmSmi) found.add('rocm-smi')
+  if (hasAmdSysfs) found.add('amd-sysfs')
 
-  if (hasAmdSmi) {
-    result.push('amd-smi')
-  } else if (hasRocmSmi) {
-    result.push('rocm-smi')
-  } else if (hasAmdSysfs) {
-    result.push('amd-sysfs')
-  }
-
-  return result
+  return orderBackends(found)
 }
 
 async function probeRemote(hostEntry) {
@@ -165,5 +163,6 @@ module.exports = {
   detectCached,
   clearCache,
   PROBE_CMD,
+  AMD_PRIORITY,
   backendLabel
 }

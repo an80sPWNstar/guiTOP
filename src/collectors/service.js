@@ -142,45 +142,96 @@ function mergeBackendResults(parts) {
   return { gpus, processes }
 }
 
-// Run every backend the host supports. A backend that fails is skipped rather
-// than taking the whole host down — but if they ALL fail, surface the error.
-async function pollBackends(hostEntry, backends, pollers) {
-  const settled = await Promise.all(backends.map(async (b) => {
-    const poll = pollers[b]
-    if (!poll) return { backend: b, error: new Error(`no poller for backend "${b}"`) }
+// The AMD tools all describe the SAME cards, so only one may serve a host or every
+// card renders twice. NVIDIA is independent and always polled alongside. Group the
+// detected backends into slots: one slot = one set of cards = one winning backend.
+function planSlots(backends) {
+  const slots = []
+  if (backends.includes('nvidia')) slots.push(['nvidia'])
+  const amd = vendor.AMD_PRIORITY.filter(b => backends.includes(b))
+  if (amd.length) slots.push(amd)
+  return slots
+}
+
+function slotName(candidates) {
+  return candidates[0] === 'nvidia' ? 'nvidia' : 'amd'
+}
+
+// Walk a slot's candidates best-first and keep the first that actually produces a
+// card. Installed does not mean working: a real ROCm 7.2 box had rocm-smi present
+// but aborting, so the old code took the whole host down while sysfs sat there with
+// full telemetry. The winner is remembered so steady state is one call per slot,
+// and forgotten the moment it stops delivering so the chain is re-walked.
+async function pollSlot(hostEntry, candidates, pollers, state) {
+  const name = slotName(candidates)
+  const chosen = state.chosen[name]
+  const order = chosen ? [chosen, ...candidates.filter(b => b !== chosen)] : candidates
+
+  const notes = []
+  let empty = null
+
+  for (const backend of order) {
+    const poll = pollers[backend]
+    if (!poll) {
+      notes.push(`${backend}: no poller`)
+      continue
+    }
     try {
-      return { backend: b, result: await poll(hostEntry) }
+      const result = await poll(hostEntry)
+      if (result && result.gpus && result.gpus.length > 0) {
+        state.chosen[name] = backend
+        return { backend, result, notes }
+      }
+      // Parsed fine but described no cards -- keep it only if nothing better shows up.
+      if (!empty) empty = { backend, result: result || { gpus: [], processes: [] } }
+      notes.push(`${backend}: reported no GPUs`)
     } catch (err) {
-      return { backend: b, error: err }
+      notes.push(`${backend}: ${err.message}`)
+    }
+  }
+
+  delete state.chosen[name]
+  if (empty) return { ...empty, notes }
+  throw new Error(notes.join('; ') || `no working backend for ${name}`)
+}
+
+async function pollHost(hostEntry, state) {
+  const backends = await vendor.detectCached(hostEntry)
+  const slots = planSlots(backends)
+  if (slots.length === 0) {
+    throw new Error('no GPU backend found (nvidia-smi, amd-smi, rocm-smi, amdgpu sysfs)')
+  }
+
+  const pollers = hostEntry.local ? LOCAL_POLLERS : REMOTE_POLLERS
+  const settled = await Promise.all(slots.map(async (candidates) => {
+    try {
+      return await pollSlot(hostEntry, candidates, pollers, state)
+    } catch (err) {
+      return { error: err, notes: [] }
     }
   }))
 
+  // One dead slot must not hide a healthy one -- only fail if every slot failed.
   const ok = settled.filter(s => s.result)
   if (ok.length === 0) {
-    const first = settled[0]
-    throw new Error(first ? `${first.backend}: ${first.error.message}` : 'no GPU backend available')
+    throw new Error(settled.map(s => s.error.message).join(' | '))
   }
 
   const merged = mergeBackendResults(ok.map(s => s.result))
   merged.backends = ok.map(s => s.backend)
-  const failed = settled.filter(s => s.error)
-  if (failed.length) {
-    merged.warning = failed.map(s => `${s.backend}: ${s.error.message}`).join('; ')
-  }
-  return merged
-}
 
-async function pollHost(hostEntry) {
-  const backends = await vendor.detectCached(hostEntry)
-  if (backends.length === 0) {
-    throw new Error('no GPU backend found (nvidia-smi, amd-smi, rocm-smi, amdgpu sysfs)')
-  }
-  return pollBackends(hostEntry, backends, hostEntry.local ? LOCAL_POLLERS : REMOTE_POLLERS)
+  const notes = settled.flatMap(s => s.notes).concat(settled.filter(s => s.error).map(s => s.error.message))
+  if (notes.length) merged.warning = notes.join('; ')
+  return merged
 }
 
 function startHost(hostEntry, onData, { interval = DEFAULT_INTERVAL, useMock = false, mockVendor = 'nvidia' } = {}) {
   let timer = null
   let running = true
+
+  // Which backend won each slot on this host. Lives with the poll loop, so it is
+  // gone when the host is removed.
+  const state = { chosen: {} }
 
   async function tick() {
     const payload = {
@@ -193,7 +244,7 @@ function startHost(hostEntry, onData, { interval = DEFAULT_INTERVAL, useMock = f
     }
 
     try {
-      const result = useMock ? mock.fetch(3, mockVendor) : await pollHost(hostEntry)
+      const result = useMock ? mock.fetch(3, mockVendor) : await pollHost(hostEntry, state)
       payload.gpus = result.gpus
       payload.processes = result.processes
       if (result.backends) payload.backends = result.backends
@@ -227,5 +278,5 @@ function startAll(hosts, onData, opts) {
   }
 }
 
-// mergeBackendResults is exported for tests only.
-module.exports = { startHost, startAll, mergeBackendResults }
+// mergeBackendResults, planSlots and pollSlot are exported for tests only.
+module.exports = { startHost, startAll, mergeBackendResults, planSlots, pollSlot }

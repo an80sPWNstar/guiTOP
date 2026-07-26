@@ -65,7 +65,8 @@ if (g.length === 2) {
   eq('[0] clockSm Hz->MHz', g[0].clockSm, 2394)
   eq('[0] vendor', g[0].vendor, 'amd')
 
-  eq('[1] index (card2, gap preserved)', g[1].index, 2)
+  eq('[1] index is dense, not the DRM number', g[1].index, 1)
+  eq('[1] drmCard keeps the DRM number', g[1].drmCard, 2)
   eq('[1] name from PCI_ID', g[1].name, 'AMD GPU 73DF')
   eq('[1] utilization zero survives', g[1].utilization, 0)
   eq('[1] powerDraw falls back to power1_input', g[1].powerDraw, 22)

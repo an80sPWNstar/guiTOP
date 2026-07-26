@@ -4,22 +4,39 @@ _Last updated: 2026-07-25 v0.3.1. Read this + `CLAUDE.md` once at session start.
 
 ## RESUME HERE — open item
 
-**AMD parsers have never run against real AMD hardware.** They were written from AMD's
-documented schemas plus synthetic fixtures. A friend of the user is testing v0.3.1 on real
-AMD hardware.
+**A v0.3.2 release is not built or pushed yet.** The AMD fixes below are committed locally
+and verified, but the friend testing on real AMD hardware is still running v0.3.1, which
+shows his machine as a **dead host**. He needs a new build to see anything at all.
 
-To close this out, get a capture from that machine and tune against it:
-```bash
-node tools/gpu-probe.js --json > gpu-probe.json
-```
-Highest-risk fields, in order:
-1. **fan speed** — cards report RPM, percent, or raw 0–255 PWM depending on model. `pickFan()`
-   in `src/collectors/amd-smi.js` guesses by range; a wrong guess yields `null`, not a wrong number.
-2. **power cap key name** — `limit.max_power` on ROCm 6; other versions differ.
-3. **VRAM units** — MB in some ROCm versions, raw bytes in others. `toMib()` falls back to a
-   "greater than 1,000,000 means bytes" heuristic when no unit string is present.
+Remaining validation gap: the **amd-smi** and **rocm-smi** parsers have still never run
+against real hardware. The capture we got had `amd-smi` absent and `rocm-smi` aborting, so
+only the **sysfs** reader is proven. A capture from an Instinct card or a ROCm 6 box would
+close it. Still-unverified guesses live in `src/collectors/amd-smi.js`: `pickFan()` (RPM vs
+percent vs raw PWM), the power-cap key name, and `toMib()`'s "over 1,000,000 means bytes"
+fallback.
 
-Everything degrades to `null` rather than throwing, so the failure mode is a blank field.
+### What the real capture (2026-07-26) taught us
+
+Machine: Radeon 8060S / Strix Halo APU (PCI `1002:7550`), CachyOS, ROCm 7.2, rocm-smi 4.0.0.
+Capture kept at `E:\Downloads\gpuprobe.json`; distilled into `test/real-hardware.test.js`.
+
+1. **The sysfs reader was exactly right.** Every field it produced checked out against the
+   raw capture: 1698/16304 MiB, 32 C edge, 52 W, 374 W cap, fan 1533/5000 = 31%, 1943 MHz
+   (agreeing with the starred `pp_dpm_sclk` line). No unit heuristic was wrong.
+2. **`rocm-smi --showallinfo --json` aborts** on ROCm 7.2 — a python assertion inside
+   `get_od_clk_volt_info`, reached via the overdrive clock/voltage table. We parse nothing
+   from that table. `ROCM_CMD` now asks only for the fields `parseRocmSmi` reads.
+3. **That crash used to kill the whole host.** `vendor.js` picked `rocm-smi` because it was in
+   `PATH` and an `else if` chain suppressed sysfs entirely; the sole backend then threw and
+   `pollBackends` reported the host unreachable — with complete telemetry sitting unread in
+   sysfs. Detection now reports *every* backend and the poll loop walks them best-first.
+4. **DRM numbering does not start at 0.** The only GPU was `card1`, so it rendered as "GPU 1"
+   and the merge offset left a phantom slot. sysfs cards are now renumbered 0..N-1 with the
+   real number kept in `drmCard`.
+5. **APUs have no `product_name`**, so the card names itself from its PCI id — displays as
+   "AMD GPU 7550" rather than "Radeon 8060S". Cosmetic, left alone. If it ever matters, the
+   fix is a one-shot lookup in `/usr/share/hwdata/pci.ids` (present on most distros) cached
+   per host; do NOT interpolate the device id into a shell command.
 
 Also deferred (do these together in one release, per user):
 - **App icon**: `assets/images/app-icon.ico` is committed but electron-builder has no `icon`
@@ -28,7 +45,21 @@ Also deferred (do these together in one release, per user):
 
 ## Current State
 
-### v0.3.1 — AMD GPU support (Linux) + Claude strip layout fix (this session)
+### Unreleased — AMD fixes from the first real-hardware capture (this session)
+- Backend detection no longer suppresses fallbacks. `vendor.js` reports every backend found;
+  `service.js` groups them into slots (one slot = one set of cards = one winning backend) and
+  walks each slot best-first, keeping the first backend that actually returns a card. Winner
+  remembered per host, forgotten the moment it stops delivering.
+- AMD preference order changed to **amd-smi > amdgpu sysfs > rocm-smi**. sysfs was promoted
+  above rocm-smi on evidence: same fields, a file read instead of a python spawn every second,
+  and a layout that does not move between ROCm releases.
+- `ROCM_CMD` narrowed off the overdrive clock table that aborts on ROCm 7.2.
+- sysfs GPUs renumbered densely; real DRM number kept in `drmCard`.
+- `npm test` — 148 assertions, 6 suites (added `real-hardware.test.js`, `fallback.test.js`).
+- Verified NVIDIA is untouched: both hosts still `ok`, indices 0/1/2, no warnings, 27 and 3
+  processes. `Family-LLM` is remote, which exercises the ssh2 path through the refactor.
+
+### v0.3.1 — AMD GPU support (Linux) + Claude strip layout fix (prior session)
 - AMD GPUs collected alongside NVIDIA on Linux. Three backends, auto-detected per host and
   cached: `amd-smi` (ROCm 6+), `rocm-smi` (legacy fallback), bare `amdgpu` sysfs (no ROCm needed).
 - New: `src/collectors/amd-smi.js`, `amd-sysfs.js`, `vendor.js`, `tools/gpu-probe.js`, `test/`.
@@ -67,6 +98,9 @@ Also deferred (do these together in one release, per user):
 - Electron 31, ssh2 transport, safeStorage for passwords
 
 ## Gotchas (bit us, don't re-learn)
+- **A GPU tool being installed does not mean it works.** Never let a single detected backend be
+  the only thing standing between a host and "unreachable". This cost us a completely dead host
+  on the first real AMD machine we ever saw. `test/fallback.test.js` guards it.
 - **`ssh.js` rejects on non-zero remote exit.** Any probe command ending in a shell test that
   legitimately fails (no amdgpu card, no `pp_dpm_sclk`) marks the WHOLE HOST down. Both fixed
   commands end `; true`; `test/commands.test.js` guards it.

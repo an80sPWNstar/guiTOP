@@ -101,25 +101,21 @@ guiTOP/
 
 ## AMD GPU Support
 
-AMD GPU support is Linux-only. The application attempts to detect and use backends in the following order of preference:
+AMD GPU support is restricted to Linux. Three backends exist: `amd-smi` for ROCm 6.0 and newer, the `amdgpu` sysfs interface which requires only the kernel driver, and `rocm-smi`, a legacy tool deprecated since ROCm 3.9. The preference order is `amd-smi`, then `amdgpu` sysfs, then `rocm-smi`. The sysfs backend precedes `rocm-smi` because it exposes the same fields the parser reads, costs a file read instead of spawning a Python process on every one-second poll, and does not shift its layout between ROCm releases. Only `amd-smi` provides per-process rows; neither sysfs nor `rocm-smi` does.
 
-1.  **amd-smi**: The modern tool for ROCm 6.0+.
-2.  **rocm-smi**: Legacy tool (deprecated since ROCm 3.9), used only if `amd-smi` is absent.
-3.  **amdgpu sysfs**: A bare reader requiring no ROCm installation.
+Installation does not guarantee functionality. Detection reports every backend it finds, and the poll loop walks them best-first, keeping the first that actually returns a card. The winning backend is remembered per host so the steady state is a single call, and it is forgotten as soon as it stops returning cards, so the list is re-walked. This prevents a broken tool from taking a whole host down. Observed on a ROCm 7.2 machine: `rocm-smi` was present in `PATH` but aborted mid-query with an assertion failure inside `get_od_clk_volt_info`, reached through the overdrive clock and voltage table. That previously marked the host unreachable even though the sysfs tree held complete, correct telemetry. The `rocm-smi` query no longer requests that table at all, since none of its values are parsed.
 
-Backend detection runs once per host on its first poll and is cached for the process lifetime. No per-host configuration is required, and the host list format remains unchanged.
+Since all AMD tools describe the same physical cards, exactly one may serve a host or every card would be listed twice. NVIDIA is independent and is always polled alongside. On hybrid hosts results merge with offset indices so display indices stay unique, while the per-vendor index is preserved in `nativeIndex`. Every GPU object includes a `vendor` field set to either `'nvidia'` or `'amd'`. DRM card numbering is neither dense nor guaranteed to start at zero — an observed machine had its only GPU at `card1` — so the sysfs backend renumbers the cards it keeps to 0..N-1 and stores the real DRM number in `drmCard`.
 
-A single host may contain both NVIDIA and AMD GPUs. Both backends execute concurrently, and their results are merged into a unified list. Each backend indexes its cards starting from zero; to ensure unique display indices, later backends are offset by the count of GPUs from earlier backends. The original per-vendor zero-based index is preserved in the `nativeIndex` field of each GPU object. Every GPU object includes a `vendor` field set to either `'nvidia'` or `'amd'`.
-
-Process-level GPU data is available only via the `amd-smi` backend. The `rocm-smi` and sysfs backends do not provide process lists.
+Field coverage varies between consumer Radeon and Instinct cards, and the `amd-smi` JSON schema is unstable across ROCm versions. Parsing is therefore defensive: unexpected payloads result in an empty list rather than an exception, and missing individual metrics resolve to `null` instead of discarding the entire card. APUs often lack a `product_name` file, in which case the card is named from its PCI device id.
 
 Windows AMD support is intentionally omitted. Neither `amd-smi` nor `rocm-smi` ships for Windows. While existing Windows performance counters can provide GPU utilization and per-process VRAM usage, they cannot report temperature, power, clock speeds, or total VRAM. This would result in incomplete card representations. Full Windows support would require a native addon integrating LibreHardwareMonitor or the AMD ADLX SDK.
-
-Field coverage varies between consumer Radeon and Instinct cards. Additionally, the `amd-smi` JSON schema is unstable across ROCm versions. Parsing is defensive: unexpected payloads result in an empty list rather than an exception, and missing individual metrics are set to `null` rather than discarding the entire GPU object.
 
 ## Capturing Real Hardware Output
 
 Parsers were developed against documented schemas and synthetic fixtures. Verify new fields against real hardware output before relying on them.
+
+Status: the **sysfs** reader is now pinned to a real capture (Radeon 8060S / Strix Halo APU, ROCm 7.2) in `test/real-hardware.test.js`, and every field it produced was correct. The **amd-smi** and **rocm-smi** parsers have still never run against real hardware — that machine had neither tool working (`amd-smi` absent, `rocm-smi` aborting). Captures from an Instinct or a ROCm 6 box would close that gap.
 
 Run the following command on the target AMD machine to generate a human-readable summary:
 
@@ -163,6 +159,8 @@ Current test suites:
 
 *   `test/amd-smi.test.js`: Validates `amd-smi` and `rocm-smi` parsers against fixtures for both modern nested (value/unit) and legacy flat JSON shapes.
 *   `test/amd-sysfs.test.js`: Validates the sysfs reader.
+*   `test/real-hardware.test.js`: Pins the sysfs reader to a real capture (Radeon 8060S / Strix Halo APU, ROCm 7.2, GPU at `card1`, no `product_name`) and guards that the `rocm-smi` query stays off the overdrive clock table that aborts on ROCm 7.2.
+*   `test/fallback.test.js`: Validates backend slot planning and the best-first fallback walk — a present-but-broken tool must not take a host down while a working backend sits behind it.
 *   `test/merge.test.js`: Validates mixed-vendor index merging logic.
 *   `test/commands.test.js`: Guards the integrity of fixed remote command strings.
 

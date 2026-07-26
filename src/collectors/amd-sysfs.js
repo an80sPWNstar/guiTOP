@@ -254,6 +254,12 @@ function parseSysfs(text) {
       card.name = 'AMD GPU'
     }
 
+    // DRM numbering is not dense and does not have to start at 0 -- a real capture
+    // had a lone GPU at card1. Renumber the cards we keep so they read 0..N-1 and
+    // the mixed-vendor merge cannot leave a phantom slot. Real number kept for debug.
+    card.drmCard = index
+    card.index = result.length
+
     // Clean up internal raw data
     delete card._raw
 
@@ -410,6 +416,10 @@ async function fetchLocal() {
       if (!gpu.name) {
         gpu.name = 'AMD GPU'
       }
+
+      // Dense 0..N-1 display index; see the same note in parseSysfs.
+      gpu.drmCard = index
+      gpu.index = gpus.length
 
       gpus.push(gpu)
     }
