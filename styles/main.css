@@ -1080,7 +1080,9 @@ body.skin-corvette .cu-dock { flex-shrink: 0; }
   container-type: inline-size;
   display: flex;
   align-items: center;
-  gap: clamp(12px, 4cqw, 24px);
+  /* Seven gaps sit between the strip's blocks, so the cap here moves the wrap
+     threshold by ~50px on its own. */
+  gap: clamp(10px, 3cqw, 18px);
   flex-wrap: wrap;
   padding: clamp(4px, 1cqw, 8px) clamp(10px, 3cqw, 20px);
   background: var(--cu-bg);
@@ -1093,7 +1095,6 @@ body.skin-corvette .cu-dock { flex-shrink: 0; }
    allowed to absorb the squeeze; past that the strip wraps to a second row. */
 .cu-brand,
 .cu-readout,
-.cu-accts,
 .cu-auto { flex-shrink: 0; }
 .cu-label,
 .cu-val,
@@ -1164,8 +1165,21 @@ body.skin-corvette .cu-dock { flex-shrink: 0; }
 .cu-arrow { font-size: 16px; line-height: 0; vertical-align: -2px; }
 
 /* ── Claude swap — account chips + auto status ── */
+/* Divider + account chips + AUTO travel together. Left loose they wrap one at a
+   time, and a second row holding nothing but AUTO reads as a layout bug rather
+   than as a strip that ran out of width. */
+.cu-swap {
+  display: flex;
+  align-items: center;
+  gap: clamp(8px, 2cqw, 14px);
+  /* Deliberately shrinkable: a flex item that cannot shrink is laid out at its
+     max-content width, so an inner flex-wrap never triggers and the cluster
+     overflows the strip instead of wrapping. Shrinking is safe here because the
+     chips and the AUTO block inside keep their own flex-shrink: 0. */
+  flex-wrap: wrap;
+}
 .cu-div { width: 1px; align-self: stretch; background: var(--cu-border); }
-.cu-accts { display: flex; align-items: center; gap: 8px; }
+.cu-accts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .cu-chip {
   display: flex;
   align-items: center;
@@ -1195,4 +1209,9 @@ body.skin-corvette .cu-dock { flex-shrink: 0; }
 }
 .cu-mini-fill { height: 100%; width: 0; border-radius: 2px; }
 .cu-auto { display: flex; align-items: center; gap: 6px; }
+/* Narrow enough and the word AUTO is what pushes its own value past the right
+   edge. The lit dot already says which state this is, so the word goes first. */
+@container (max-width: 560px) {
+  .cu-auto .cu-label { display: none; }
+}
 .cu-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.15); }

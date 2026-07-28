@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, Menu, Tray } = require('electron')
+const { app, BrowserWindow, ipcMain, safeStorage, Menu, Tray, screen } = require('electron')
 const os = require('os')
 const http = require('http')
 const fs = require('fs')
@@ -31,6 +31,10 @@ const isDev = process.argv.includes('--dev')
 const mockVendor = process.argv.includes('--mock-amd') ? 'amd' : 'nvidia'
 const useMock = process.argv.includes('--mock') || mockVendor === 'amd'
 const PRELOAD = path.join(__dirname, 'preload.js')
+// .ico carries every size Windows asks for; Electron on Linux does not read .ico
+// at all, so that platform gets the 256px PNG unpacked from the same source art.
+const APP_ICON = path.join(__dirname, 'assets', 'images',
+  process.platform === 'win32' ? 'app-icon.ico' : 'app-icon.png')
 
 let win = null
 let tray = null
@@ -57,6 +61,40 @@ function saveSettings(s) {
   try { fs.writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2)) } catch {}
 }
 
+const DEFAULT_BOUNDS = { width: 960, height: 680 }
+
+// Window geometry is only honoured if it still lands on a display that exists —
+// unplugging the monitor a window was last closed on must not park it off-screen.
+function savedBounds() {
+  const b = loadSettings().windowBounds
+  if (!b || typeof b !== 'object') return DEFAULT_BOUNDS
+  const { width, height, x, y } = b
+  if (!Number.isInteger(width) || !Number.isInteger(height)) return DEFAULT_BOUNDS
+  if (width < 320 || height < 200) return DEFAULT_BOUNDS
+  if (!Number.isInteger(x) || !Number.isInteger(y)) return { width, height }
+  const onScreen = screen.getAllDisplays().some((d) => {
+    const a = d.workArea
+    return x < a.x + a.width && x + width > a.x && y < a.y + a.height && y + height > a.y
+  })
+  return onScreen ? { width, height, x, y } : { width, height }
+}
+
+let saveBoundsTimer = null
+
+function saveBoundsSoon() {
+  if (saveBoundsTimer) clearTimeout(saveBoundsTimer)
+  saveBoundsTimer = setTimeout(() => {
+    saveBoundsTimer = null
+    if (!win || win.isDestroyed()) return
+    const s = loadSettings()
+    // getNormalBounds is the restored size, so a maximized window still
+    // remembers something sane to un-maximize back to.
+    s.windowBounds = win.getNormalBounds()
+    s.windowMaximized = win.isMaximized()
+    saveSettings(s)
+  }, 500)
+}
+
 function broadcastHostList() {
   if (win && !win.isDestroyed()) {
     win.webContents.send('host-list', activeHosts.map(h => h.label))
@@ -64,7 +102,7 @@ function broadcastHostList() {
 }
 
 function createTray() {
-  tray = new Tray(path.join(__dirname, 'assets', 'images', 'app-icon.ico'))
+  tray = new Tray(APP_ICON)
   tray.setToolTip('guiTOP')
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show',   click: () => { if (win && !win.isDestroyed()) win.show() } },
@@ -98,17 +136,26 @@ function startCollector(hostEntry) {
 }
 
 function createWindow() {
+  const settings = loadSettings()
+
   win = new BrowserWindow({
-    width: 960,
-    height: 680,
+    ...savedBounds(),
     minWidth: 320,
     minHeight: 200,
+    icon: APP_ICON,
     webPreferences: {
       preload: PRELOAD,
       contextIsolation: true,
       nodeIntegration: false,
     },
   })
+
+  if (settings.windowMaximized) win.maximize()
+
+  win.on('resize', saveBoundsSoon)
+  win.on('move', saveBoundsSoon)
+  win.on('maximize', saveBoundsSoon)
+  win.on('unmaximize', saveBoundsSoon)
 
   win.loadFile('renderer/index.html')
   if (isDev) win.webContents.openDevTools({ mode: 'detach' })

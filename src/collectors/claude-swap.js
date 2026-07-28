@@ -5,15 +5,82 @@
 // CLI via IPC handlers in main.js, not a shadow config file.
 
 const { execFile } = require('child_process')
+const { cswapCmd } = require('./cswap-cmd')
 
 const POLL_MS = 45000
 
+// `cswap auto` is a foreground polling loop — no daemon, no pidfile, nothing on
+// disk to check — so the only way to know it is running is to look for the
+// process. uv-installed tools run under python.exe with the shim path in their
+// command line, so the command line is what gets matched, never the name.
+const PS_PROC_QUERY = 'Get-CimInstance Win32_Process -Filter "Name=\'python.exe\' OR Name=\'pythonw.exe\' OR Name=\'cswap.exe\'" | Select-Object ProcessId, CommandLine, CreationDate | ConvertTo-Json'
+
 function runCswap(cb) {
-  execFile('cmd.exe', ['/c', 'cswap', 'list', '--json'], {
+  const { file, args } = cswapCmd(['list', '--json'])
+  execFile(file, args, {
     windowsHide: true,
     timeout: 15000,
     maxBuffer: 1024 * 1024,
   }, cb)
+}
+
+// Windows PowerShell 5.1 serialises a DateTime as "/Date(1769...)/" while
+// PowerShell 7 emits ISO 8601, and which one answers depends on the machine.
+function parsePsDate(val) {
+  if (typeof val !== 'string') return null
+  // The epoch form sometimes carries a trailing timezone offset: /Date(ms+0100)/.
+  const epoch = val.match(/\/Date\((-?\d+)(?:[+-]\d{4})?\)\//)
+  const ms = epoch ? Number(epoch[1]) : Date.parse(val)
+  return Number.isFinite(ms) ? ms : null
+}
+
+function isAutoCmdline(cmdline) {
+  if (typeof cmdline !== 'string') return false
+  if (!/cswap/i.test(cmdline)) return false
+  // The subcommand is a bare argument: `"...\cswap.exe" auto --interval 60`.
+  // Matching a loose /auto/ would also hit any directory called "auto".
+  return /\sauto(\s|$)/.test(cmdline)
+}
+
+function readAuto(rows, now) {
+  for (const row of rows) {
+    if (!row || !isAutoCmdline(row.CommandLine)) continue
+    const started = parsePsDate(row.CreationDate)
+    return {
+      autoOn: true,
+      autoSinceMin: started === null ? null : Math.max(0, Math.floor((now - started) / 60000)),
+    }
+  }
+  return { autoOn: false, autoSinceMin: null }
+}
+
+// Never reports an error: a detection that cannot run just means "not detected".
+function detectAuto(cb) {
+  const none = { autoOn: false, autoSinceMin: null }
+
+  if (process.platform === 'win32') {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', PS_PROC_QUERY], {
+      windowsHide: true,
+      timeout: 5000,
+      maxBuffer: 1024 * 1024,
+    }, (err, stdout) => {
+      if (err) return cb(none)
+      let parsed
+      try { parsed = JSON.parse(stdout) } catch { return cb(none) }
+      // ConvertTo-Json emits a bare object, not an array, for a single match.
+      cb(readAuto(Array.isArray(parsed) ? parsed : [parsed], Date.now()))
+    })
+    return
+  }
+
+  // pgrep reports no start time, so autoSinceMin stays null off Windows.
+  execFile('pgrep', ['-af', 'cswap'], { timeout: 5000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+    if (err) return cb(none)
+    const rows = String(stdout).split('\n')
+      .filter(l => l.trim() && !l.includes('pgrep'))
+      .map(l => ({ CommandLine: l }))
+    cb(readAuto(rows, Date.now()))
+  })
 }
 
 function clampPct(v) {
@@ -72,20 +139,24 @@ function startClaudeSwap(onData) {
         running = false
         return
       }
+      let parsed
       try {
-        const parsed = parseSwap(stdout)
+        parsed = parseSwap(stdout)
+      } catch (parseErr) {
+        onData({ ok: false, ts: Date.now(), error: parseErr.message, accounts: [] })
+        running = false
+        return
+      }
+      detectAuto((auto) => {
         onData({
           ok: true,
           ts: Date.now(),
-          // TODO: detect a user-run `cswap auto` daemon; not wired up yet, always false.
-          autoOn: false,
-          autoSinceMin: null,
+          autoOn: auto.autoOn,
+          autoSinceMin: auto.autoSinceMin,
           accounts: parsed.accounts,
         })
-      } catch (parseErr) {
-        onData({ ok: false, ts: Date.now(), error: parseErr.message, accounts: [] })
-      }
-      running = false
+        running = false
+      })
     })
   }
 
@@ -102,4 +173,4 @@ function startClaudeSwap(onData) {
   }
 }
 
-module.exports = { startClaudeSwap, parseSwap }
+module.exports = { startClaudeSwap, parseSwap, parsePsDate, isAutoCmdline, readAuto, detectAuto }

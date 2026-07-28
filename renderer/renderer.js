@@ -217,8 +217,16 @@ async function updateOAuthStatus() {
 async function updateClaudeWebUI() {
   const st = await window.guiTOP.claudeWebStatus()
   if (st && st.loggedIn) {
-    claudeWebStatus.textContent = '✓ Logged in to claude.ai' + (st.organizationId ? ' (' + st.organizationId.slice(0, 12) + ')' : '')
-    claudeWebStatus.style.color = 'var(--color-ok, #3fc079)'
+    // Where the session key lives matters to the user: 'memory' will not survive
+    // a restart, 'plaintext' is on disk unencrypted because there was no keyring.
+    const note = st.keyStorage === 'memory' ? ' — this session only, not saved'
+      : st.keyStorage === 'plaintext' ? ' — key stored unencrypted'
+      : ''
+    claudeWebStatus.textContent = '✓ Logged in to claude.ai'
+      + (st.organizationId ? ' (' + st.organizationId.slice(0, 12) + ')' : '') + note
+    claudeWebStatus.style.color = st.keyStorage === 'encrypted'
+      ? 'var(--color-ok, #3fc079)'
+      : 'var(--color-warn, #e0a33e)'
     claudeLoginBtn.style.display = 'none'
     claudeLogoutBtn.style.display = ''
   } else {

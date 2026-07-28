@@ -2,11 +2,13 @@
 // usage percentages — matches what claude.ai/account shows online.
 
 const { execFile } = require('child_process')
+const { cswapCmd } = require('./cswap-cmd')
 
 const POLL_MS = 45000
 
 function runCswap(cb) {
-  execFile('cmd.exe', ['/c', 'cswap', 'list', '--json'], {
+  const { file, args } = cswapCmd(['list', '--json'])
+  execFile(file, args, {
     windowsHide: true,
     timeout: 15000,
     maxBuffer: 1024 * 1024,

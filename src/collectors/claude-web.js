@@ -6,7 +6,11 @@
 
 const fs = require('fs')
 const path = require('path')
-const { app, BrowserWindow, session, safeStorage } = require('electron')
+const { app, BrowserWindow, dialog, session, safeStorage } = require('electron')
+
+// The live key, so a session that the user declined to persist still works for
+// as long as the app is running.
+let memoryKey = null
 
 const FALLBACK_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
@@ -42,8 +46,14 @@ function readStore() {
   }
 }
 
+// 0600, always: this file holds a full claude.ai account credential, and the
+// default mode would leave it readable by every local account. mode on write
+// only applies when the file is created, so an existing file is chmod'ed too
+// (a no-op on Windows, where the ACL inherited from userData already applies).
 function writeStore(data) {
-  fs.writeFileSync(storePath(), JSON.stringify(data))
+  const p = storePath()
+  fs.writeFileSync(p, JSON.stringify(data), { mode: 0o600 })
+  try { fs.chmodSync(p, 0o600) } catch { /* not POSIX */ }
 }
 
 function deleteStore() {
@@ -55,6 +65,7 @@ function deleteStore() {
 }
 
 function getSessionKey() {
+  if (memoryKey) return memoryKey
   const store = readStore()
   if (!store) return null
   if (store.sessionKeyEnc) {
@@ -69,16 +80,48 @@ function getSessionKey() {
   return store.sessionKey || null
 }
 
-function saveSessionKey(key) {
+// Asked once per login when there is nowhere safe to put the key. Declining is
+// not an error: the key stays in memory and the next launch asks for a login.
+async function confirmPlaintext() {
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    title: 'No keyring available',
+    message: 'guiTOP cannot encrypt your claude.ai session key on this machine.',
+    detail: 'No OS keyring is available, so the key can only be saved as plain text in claude-web.json. '
+      + 'The file is written readable by your user account only, but anyone with your login or your backups can read it.\n\n'
+      + 'Keeping it in memory means logging in again the next time guiTOP starts.',
+    buttons: ['Keep in memory only', 'Save unencrypted'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  })
+  return response === 1
+}
+
+async function saveSessionKey(key) {
+  memoryKey = key
+
   const store = readStore() || {}
+  const hadPlaintext = !!store.sessionKey
   delete store.sessionKey
   delete store.sessionKeyEnc
+
   if (safeStorage.isEncryptionAvailable()) {
     store.sessionKeyEnc = safeStorage.encryptString(key).toString('base64')
-  } else {
-    store.sessionKey = key
+    writeStore(store)
+    return { persisted: true, encrypted: true }
   }
+
+  // An existing plaintext key means this was already agreed to; don't re-ask.
+  if (hadPlaintext || await confirmPlaintext()) {
+    store.sessionKey = key
+    writeStore(store)
+    return { persisted: true, encrypted: false }
+  }
+
+  // Declined — drop whatever was on disk rather than leaving a stale key.
   writeStore(store)
+  return { persisted: false, encrypted: false }
 }
 
 // ---- cookies ---------------------------------------------------------------
@@ -129,15 +172,26 @@ async function login() {
       resolve(result)
     }
 
+    // The cookie event and the poll can both see the same key, and saving it may
+    // put a modal consent dialog on screen, so capture happens exactly once.
+    let capturing = false
+
+    function onCaptured(value) {
+      if (settled || capturing) return
+      capturing = true
+      saveSessionKey(value)
+        .catch(() => {})
+        .then(() => discoverOrgId())
+        .then(() => settle({ success: true }))
+        .catch(() => settle({ success: true }))
+    }
+
     // Listen for cookie-changed events — faster path than polling.
     const onCookieChanged = (_event, cookie, _cause, removed) => {
       if (settled) return
       if (cookie.name !== 'sessionKey' || removed || !cookie.value) return
       if (!cookie.domain || !cookie.domain.includes('claude.ai')) return
-      saveSessionKey(cookie.value)
-      discoverOrgId()
-        .then(() => settle({ success: true }))
-        .catch(() => settle({ success: true }))
+      onCaptured(cookie.value)
     }
     session.defaultSession.cookies.on('changed', onCookieChanged)
 
@@ -155,10 +209,7 @@ async function login() {
         })
         for (const c of cookies) {
           if (c.name === 'sessionKey' && c.value && !settled) {
-            saveSessionKey(c.value)
-            discoverOrgId()
-              .then(() => settle({ success: true }))
-              .catch(() => settle({ success: true }))
+            onCaptured(c.value)
             return
           }
         }
@@ -179,6 +230,7 @@ async function login() {
 }
 
 async function logout() {
+  memoryKey = null
   deleteStore()
   await removeClaudeCookies().catch(() => {})
   try {
@@ -196,7 +248,17 @@ function status() {
   return {
     loggedIn: !!getSessionKey(),
     organizationId: store ? store.organizationId || null : null,
+    // Lets the settings UI say where the key lives: 'memory' means this login
+    // does not survive a restart because the user declined plaintext storage.
+    keyStorage: keyStorage(store),
   }
+}
+
+function keyStorage(store) {
+  if (store && store.sessionKeyEnc) return 'encrypted'
+  if (store && store.sessionKey) return 'plaintext'
+  if (memoryKey) return 'memory'
+  return 'none'
 }
 
 // ---- internal: hidden BrowserWindow fetch + org discovery -----------------
@@ -313,4 +375,6 @@ async function fetchUsage() {
   }
 }
 
-module.exports = { login, logout, status, fetchUsage }
+// saveSessionKey/getSessionKey are exported for test/claude-web.test.js — the
+// login flow they sit behind cannot be driven headlessly.
+module.exports = { login, logout, status, fetchUsage, saveSessionKey, getSessionKey }

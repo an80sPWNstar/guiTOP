@@ -16,7 +16,7 @@ const ClaudeUsageStrip = (() => {
   }
 
   function render() {
-    return `<div class="cu-strip"><div class="cu-brand"><span class="cu-brand-name">CLAUDE</span><span class="cu-brand-sub">USAGE</span></div>${meterHtml('Session', 'session', 'reset')}${meterHtml('Week', 'week', 'week-reset')}<div class="cu-readout" data-role="fable-readout" style="display:none"><span class="cu-label" data-role="fable-label">Fable</span><span class="cu-val" data-role="fable-val">--</span><span class="cu-unit">%</span><span class="cu-val" data-role="fable-reset">--</span></div><div class="cu-readout"><span class="cu-label">Tokens Today</span><span class="cu-val" data-role="tokens">--</span></div><div class="cu-div" data-role="swap-div"></div><div class="cu-accts" data-role="accts"></div><div class="cu-auto" data-role="auto"><span class="cu-dot" data-role="auto-dot"></span><span class="cu-label">Auto</span><span class="cu-val" data-role="auto-val">--</span></div></div>`
+    return `<div class="cu-strip"><div class="cu-brand"><span class="cu-brand-name">CLAUDE</span><span class="cu-brand-sub">USAGE</span></div>${meterHtml('Session', 'session', 'reset')}${meterHtml('Week', 'week', 'week-reset')}<div class="cu-readout" data-role="fable-readout" style="display:none"><span class="cu-label" data-role="fable-label">Fable</span><span class="cu-val" data-role="fable-val">--</span><span class="cu-unit">%</span><span class="cu-val" data-role="fable-reset">--</span></div><div class="cu-readout" data-role="tokens-readout"><span class="cu-label">Tokens Today</span><span class="cu-val" data-role="tokens">--</span></div><div class="cu-swap"><div class="cu-div" data-role="swap-div"></div><div class="cu-accts" data-role="accts"></div><div class="cu-auto" data-role="auto"><span class="cu-dot" data-role="auto-dot"></span><span class="cu-label">Auto</span><span class="cu-val" data-role="auto-val">--</span></div></div></div>`
   }
 
   function paintBar(track, pct, theme) {
@@ -85,6 +85,10 @@ const ClaudeUsageStrip = (() => {
     const tokensVal = root.querySelector('[data-role="tokens"]')
 
     const fableReadout = root.querySelector('[data-role="fable-readout"]')
+    // Neither usage source fills todayTokens — it came from the old JSONL
+    // heuristic. An empty readout is ~110px of the width budget that decides
+    // whether the strip fits on one row, so it only shows when it has a number.
+    const tokensReadout = root.querySelector('[data-role="tokens-readout"]')
 
     if (!data || !data.ok) {
       sessionVal.textContent = '--'
@@ -92,6 +96,7 @@ const ClaudeUsageStrip = (() => {
       resetVal.textContent = '--'
       weekResetVal.textContent = '--'
       tokensVal.textContent = '--'
+      tokensReadout.style.display = 'none'
       fableReadout.style.display = 'none'
       updateSwap(root, swap, t)
       return
@@ -138,6 +143,7 @@ const ClaudeUsageStrip = (() => {
       fableReadout.style.display = 'none'
     }
 
+    tokensReadout.style.display = data.todayTokens == null ? 'none' : ''
     tokensVal.textContent = fmtTokens(data.todayTokens)
     tokensVal.style.color = t.val
     tokensVal.style.textShadow = `0 0 6px ${t.val}55`
