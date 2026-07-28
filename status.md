@@ -2,12 +2,18 @@
 
 _Last updated: 2026-07-27. Read this + `CLAUDE.md` once at session start._
 
-## RESUME HERE — uncommitted work, held on purpose
+## RESUME HERE
 
-**Nothing from 2026-07-27 is committed.** User decided to HOLD everything in the working tree
-and ship it as ONE release once the tester answers on the fan-percent question below. That
-answer has now arrived and the fix is in, so the release is unblocked — but still do not
-commit or bump the version without asking. Tests pass 8/8, 229 assertions.
+**v0.3.3 is committed and pushed to `main`.** Tests 8/8, 229 assertions. Three commits:
+`b3d05ae` the AMD pwm1 fan fix, `42ce06d` the app work (AUTO chip, icon, window state,
+0600 session key), `f31c464` docs. Version and `package-lock.json` both at 0.3.3.
+
+**Not done and deliberately not started: no git tag, no GitHub release, no installers built.**
+Ask before doing any of those. v0.3.1 and v0.3.2 both shipped installers via a GitHub release,
+so a tester expecting one will not find it yet.
+
+Apollo has been sent the relay: what changed, the two requests below, and the note that
+`amd-smi` remains the last unvalidated parser.
 
 **Fan-percent question: ANSWERED and FIXED (2026-07-27).** Apollo confirmed from a
 matched-moment hwmon capture on the RX 9070 XT (`/sys/class/hwmon/hwmon2`, `0000:2d:00.0`):
@@ -27,9 +33,17 @@ Still worth having when he next runs it: a full `node tools/gpu-probe.js --json`
 in it, so `test/real-hardware.test.js` can pin the sysfs fan value at 35 instead of the 31 the
 pre-pwm1 capture forces.
 
-Also open: `fetchUsage` in `src/collectors/claude-web.js` is exported and never called —
-dead code, user has not said whether to delete it. And the bottom dock position was never
-swept for the strip layout fix (only the top dock was).
+Also open, all three unanswered by the user:
+- Tag + GitHub release + installers for v0.3.3 (see above).
+- `fetchUsage` in `src/collectors/claude-web.js` is exported and never called — dead code.
+- The **bottom** dock was never swept for the strip layout fix; only the top dock was verified.
+- main.js still has two hardcoded `cmd.exe` cswap call sites (`runCswapCmd`, and the `spawn`
+  for `add-token`) that never moved to `cswapCmd`, so they stay Windows-only.
+
+**Separate project spun off:** `E:\vs_code_projects\lanllm` — a skill to make local-LLM
+delegation one step, plus a `PreToolUse` hook denying paid subagents until the free boxes have
+been probed. Scaffold only, one commit, no remote. Build it in its OWN session, not here;
+`KICKOFF.md` in that repo holds the brief.
 
 Still-unvalidated: the **amd-smi** parser has never run against real hardware (`amd-smi` was
 absent on the only AMD box we have access to). Unverified guesses live in
