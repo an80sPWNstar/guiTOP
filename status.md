@@ -33,6 +33,21 @@ Still worth having when he next runs it: a full `node tools/gpu-probe.js --json`
 in it, so `test/real-hardware.test.js` can pin the sysfs fan value at 35 instead of the 31 the
 pre-pwm1 capture forces.
 
+**Open defect in the shipped v0.3.3 Windows installer:** it contains a Linux ELF
+`cpufeatures.node`. Harmless in practice (`ssh2` falls back), but wrong. Three ways out, user has
+not picked: leave it; exclude the optional `cpu-features` from packaging via electron-builder
+`files` and re-upload the asset; or install the MSVC build tools and rebuild it properly. Full
+detail under Linux build round-trip below.
+
+**Linux GUI could not be validated locally.** The v0.3.3 AppImage launches under WSLg, the main
+process runs, the dev server binds 17580 and `/gpu/backends` returns correct mock data — then
+Chromium dies with `FATAL: GPU process isn't usable. Goodbye.` after 15-25s. Three flag
+combinations tried (`--disable-gpu`, `--in-process-gpu`, `--use-gl=swiftshader`); all fail to
+create a GL context under WSLg. So **no Linux rendering has ever been verified** — no skin, no
+strip layout. WSL cannot answer this, and it also has no real `/sys/class/drm` amdgpu tree and
+only a virtualized `nvidia-smi`. The proposed answer is `xvfb-run` on .70 (real Linux, real
+NVIDIA) driving the existing `/screenshot` endpoint — headless, no desktop needed.
+
 Also open, all three unanswered by the user:
 - Tag + GitHub release + installers for v0.3.3 (see above).
 - `fetchUsage` in `src/collectors/claude-web.js` is exported and never called — dead code.
@@ -209,9 +224,24 @@ Both items that were deferred here — the app icon and AUTO cswap detection —
 - **Stale packaged `guiTOP.exe`** (`C:\Users\Bryan\AppData\Local\Programs\guitop\`) grabs :17580
   and shadows the dev instance — the dev server then silently loses the port and serves the OLD
   routes. Kill it before dev launch.
-- **Linux build round-trip.** `npm install` from WSL swaps native modules to Linux; you MUST run
-  `npm install` from Windows again afterwards or the Windows app breaks. Verify by checking a
-  REMOTE SSH host still reports GPUs (that exercises ssh2/cpu-features).
+- **Linux build round-trip — SOLVED, and it had already bitten us silently.** Do NOT build Linux
+  from the `E:\` tree. Clone to WSL-native ext4 instead: `git clone /mnt/e/vs_code_projects/guiTOP
+  ~/build/guiTOP`, then `npm install && npm run build:linux` there. Separate `node_modules`, so
+  `E:\` is never touched and there is no round-trip to remember. Also far faster than drvfs.
+
+  This was never a WSL limitation — it was one working tree with one `node_modules` shared by two
+  platforms. Dual-boot or a bind-mounted container would break identically.
+
+  **The old advice was not followed at some point and nobody noticed.** On 2026-07-27,
+  `node_modules/cpu-features/build/Release/cpufeatures.node` in the Windows tree was found to be
+  a Linux ELF binary dated 07/20, and it shipped inside the v0.3.3 Windows installer (and almost
+  certainly v0.3.2's too). It fails to load on Windows — *"is not a valid Win32 application"* —
+  but `ssh2` treats `cpu-features` as optional and falls back cleanly, so SSH monitoring works and
+  nothing surfaced. Silent degradation, invisible for a week.
+
+  **Check after any Linux build:** the first 4 bytes of that `.node` must be `4D 5A` (`MZ`,
+  Windows PE), not `7F 45 4C 46` (ELF). `npm rebuild cpu-features --build-from-source` fails on
+  this box — no MSVC toolchain. Unresolved; see the open items at the top.
 - **`--mock-amd`** feeds AMD-shaped mock data with deliberate gaps (no fan%, no power cap on some
   cards) to test the UI against sparse telemetry without AMD hardware.
 - **DRY corrupts literals when delegating prose to a local LLM.** Release notes came back with
