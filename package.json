@@ -3,6 +3,12 @@
   "version": "0.3.3",
   "description": "guiTOP — a desktop GUI for NVIDIA GPU monitoring (local + multi-host over SSH)",
   "author": "an80sPWNstar <an80sPWNstar@users.noreply.github.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/an80sPWNstar/guiTOP",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/an80sPWNstar/guiTOP.git"
+  },
   "main": "main.js",
   "scripts": {
     "start": "electron .",
