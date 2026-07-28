@@ -32,6 +32,12 @@ const PROBES = [
   { id: 'amd-smi.process', bin: 'amd-smi', args: ['process', '--json'] },
   { id: 'amd-smi.monitor.csv', bin: 'amd-smi', args: ['monitor', '--csv'] },
 
+  // What the collector actually runs. --showallinfo (below) also pulls the
+  // overdrive clock/voltage table, which aborts the whole process on ROCm 7.2,
+  // so the narrowed set is the only rocm-smi capture that survives there.
+  // Keep in sync with ROCM_FLAGS in src/collectors/amd-smi.js (inlined so this
+  // file stays standalone and copy-pasteable onto a test machine).
+  { id: 'rocm-smi.narrowed', bin: 'rocm-smi', args: ['--showproductname', '--showuniqueid', '--showuse', '--showmeminfo', 'vram', '--showtemp', '--showpower', '--showmaxpower', '--showfan', '--showclocks', '--json'] },
   { id: 'rocm-smi.all', bin: 'rocm-smi', args: ['--showallinfo', '--json'] },
   { id: 'rocm-smi.pids', bin: 'rocm-smi', args: ['--showpids'] },
 ]
@@ -63,6 +69,9 @@ const HWMON_FILES = [
   'name', 'temp1_input', 'temp1_label', 'temp2_input', 'temp2_label',
   'temp3_input', 'temp3_label', 'power1_average', 'power1_input',
   'power1_cap', 'power1_cap_max', 'fan1_input', 'fan1_max', 'freq1_input',
+  // fan1_input/fan1_max is an RPM ratio; rocm-smi's own percent is pwm1/255.
+  // On a real card those disagreed (31% vs 35%), so capture both.
+  'pwm1', 'pwm1_max', 'pwm1_enable',
 ]
 
 function readSafe(p) {

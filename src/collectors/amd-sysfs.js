@@ -8,7 +8,7 @@
 const fs = require('fs')
 const path = require('path')
 
-const SYSFS_CMD = 'grep -H . /sys/class/drm/card*/device/gpu_busy_percent /sys/class/drm/card*/device/mem_busy_percent /sys/class/drm/card*/device/mem_info_vram_used /sys/class/drm/card*/device/mem_info_vram_total /sys/class/drm/card*/device/product_name /sys/class/drm/card*/device/hwmon/hwmon*/temp1_input /sys/class/drm/card*/device/hwmon/hwmon*/temp1_label /sys/class/drm/card*/device/hwmon/hwmon*/power1_average /sys/class/drm/card*/device/hwmon/hwmon*/power1_input /sys/class/drm/card*/device/hwmon/hwmon*/power1_cap /sys/class/drm/card*/device/hwmon/hwmon*/fan1_input /sys/class/drm/card*/device/hwmon/hwmon*/fan1_max /sys/class/drm/card*/device/hwmon/hwmon*/freq1_input /sys/class/drm/card*/device/uevent 2>/dev/null; for d in /sys/class/drm/card*/device; do for f in pp_dpm_sclk; do [ -f "$d/$f" ] && sed "s|^|$d/$f:|" "$d/$f"; done; done 2>/dev/null; true'
+const SYSFS_CMD = 'grep -H . /sys/class/drm/card*/device/gpu_busy_percent /sys/class/drm/card*/device/mem_busy_percent /sys/class/drm/card*/device/mem_info_vram_used /sys/class/drm/card*/device/mem_info_vram_total /sys/class/drm/card*/device/product_name /sys/class/drm/card*/device/hwmon/hwmon*/temp1_input /sys/class/drm/card*/device/hwmon/hwmon*/temp1_label /sys/class/drm/card*/device/hwmon/hwmon*/power1_average /sys/class/drm/card*/device/hwmon/hwmon*/power1_input /sys/class/drm/card*/device/hwmon/hwmon*/power1_cap /sys/class/drm/card*/device/hwmon/hwmon*/pwm1 /sys/class/drm/card*/device/hwmon/hwmon*/pwm1_max /sys/class/drm/card*/device/hwmon/hwmon*/fan1_input /sys/class/drm/card*/device/hwmon/hwmon*/fan1_max /sys/class/drm/card*/device/hwmon/hwmon*/freq1_input /sys/class/drm/card*/device/uevent 2>/dev/null; for d in /sys/class/drm/card*/device; do for f in pp_dpm_sclk; do [ -f "$d/$f" ] && sed "s|^|$d/$f:|" "$d/$f"; done; done 2>/dev/null; true'
 
 function parseBytesToMiB(val) {
   if (val === null || val === undefined) return null
@@ -55,6 +55,25 @@ function parseFanPercent(inputStr, maxStr) {
   const max = parseInt(maxStr, 10)
   if (isNaN(max) || max <= 0) return null
   return Math.round((rpm / max) * 100)
+}
+
+// Two different fan percentages exist on the same card. fan1_input/fan1_max is a
+// ratio of tachometer RPM against the highest RPM the driver will command; pwm1
+// is the duty cycle actually being driven. On a real RX 9070 XT those read 31%
+// and 35% at the same instant, and rocm-smi's own "Fan Level" was byte-identical
+// to pwm1 (89), so PWM is what every other AMD tool shows. Prefer it.
+//
+// pwm1_max is read rather than assumed to be 255: guessing a divisor is how a fan
+// meter ends up reading 200%. When it is absent the PWM basis is unknown, so the
+// RPM ratio is used instead -- a slightly-off number beats a wrong one.
+//
+// Deliberately NOT gated on pwm1_enable: that file does not exist on the very card
+// this path targets, so requiring it would fall back to RPM exactly where the fix
+// is needed.
+function fanPercent(raw) {
+  const pwm = parseFanPercent(raw.pwm1, raw.pwm1_max)
+  if (pwm !== null) return pwm
+  return parseFanPercent(raw.fan1_input, raw.fan1_max)
 }
 
 function extractCardIndex(filePath) {
@@ -168,6 +187,14 @@ function parseSysfs(text) {
     else if (filePath.endsWith('fan1_max')) {
       card._raw.fan1_max = value
     }
+    // pwm1_max must be tested first: endsWith('pwm1') would never match it, but
+    // the reverse order is the kind of thing a later edit gets wrong silently.
+    else if (filePath.endsWith('pwm1_max')) {
+      card._raw.pwm1_max = value
+    }
+    else if (filePath.endsWith('pwm1')) {
+      card._raw.pwm1 = value
+    }
     else if (filePath.endsWith('freq1_input')) {
       card._raw.freq1_input = value
     }
@@ -217,7 +244,7 @@ function parseSysfs(text) {
     card.powerDraw = powerDraw
 
     // Fan speed logic
-    card.fanSpeed = parseFanPercent(raw.fan1_input, raw.fan1_max)
+    card.fanSpeed = fanPercent(raw)
 
     // Clock logic
     let clockSm = null
@@ -352,13 +379,15 @@ async function fetchLocal() {
 
       if (hwmonPath) {
         // Read hwmon-level files in parallel
-        const [tempInput, powerAvg, powerInput, powerCap, fanInput, fanMax, freqInput] = await Promise.all([
+        const [tempInput, powerAvg, powerInput, powerCap, fanInput, fanMax, pwm, pwmMax, freqInput] = await Promise.all([
           readFile(path.join(hwmonPath, 'temp1_input')),
           readFile(path.join(hwmonPath, 'power1_average')),
           readFile(path.join(hwmonPath, 'power1_input')),
           readFile(path.join(hwmonPath, 'power1_cap')),
           readFile(path.join(hwmonPath, 'fan1_input')),
           readFile(path.join(hwmonPath, 'fan1_max')),
+          readFile(path.join(hwmonPath, 'pwm1')),
+          readFile(path.join(hwmonPath, 'pwm1_max')),
           readFile(path.join(hwmonPath, 'freq1_input'))
         ])
 
@@ -381,7 +410,7 @@ async function fetchLocal() {
         gpu.powerDraw = powerDraw
 
         // Fan
-        gpu.fanSpeed = parseFanPercent(fanInput, fanMax)
+        gpu.fanSpeed = fanPercent({ pwm1: pwm, pwm1_max: pwmMax, fan1_input: fanInput, fan1_max: fanMax })
 
         // Clock (freq1_input)
         gpu.clockSm = parseHertzToMHz(freqInput)

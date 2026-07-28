@@ -104,5 +104,61 @@ eq('empty', sysfs.parseSysfs('').length, 0)
 eq('null', sysfs.parseSysfs(null).length, 0)
 eq('garbage', sysfs.parseSysfs('total nonsense\nno colons here').length, 0)
 
+// PWM duty cycle (pwm1/pwm1_max) preferred over RPM ratio (fan1_input/fan1_max).
+// Real RX 9070 XT: pwm1=89, pwm1_max=255 (35%), fan1_input/max ratio (31%) at same instant.
+console.log('pwm1 duty-cycle preference:')
+const PWM_PREFERRED = [
+  '/sys/class/drm/card0/device/uevent:DRIVER=amdgpu',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/pwm1:89',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/pwm1_max:255',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/fan1_input:993',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/fan1_max:3200',
+].join('\n')
+const gPwm = sysfs.parseSysfs(PWM_PREFERRED)
+eq('pwm1 duty cycle used (not RPM ratio)', gPwm.length === 1 ? gPwm[0].fanSpeed : null, 35)
+
+console.log('fallback when no pwm files:')
+const FAN_ONLY = [
+  '/sys/class/drm/card0/device/uevent:DRIVER=amdgpu',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/fan1_input:993',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/fan1_max:3200',
+].join('\n')
+const gFan = sysfs.parseSysfs(FAN_ONLY)
+eq('RPM ratio when no pwm1/pwm1_max', gFan.length === 1 ? gFan[0].fanSpeed : null, 31)
+
+console.log('missing pwm1_max falls back to RPM:')
+const PWM_NO_MAX = [
+  '/sys/class/drm/card0/device/uevent:DRIVER=amdgpu',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/pwm1:89',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/fan1_input:993',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/fan1_max:3200',
+].join('\n')
+const gNm = sysfs.parseSysfs(PWM_NO_MAX)
+eq('RPM ratio when pwm1 missing max', gNm.length === 1 ? gNm[0].fanSpeed : null, 31)
+
+console.log('zero fan speed (stopped fan):')
+const PWM_ZERO = [
+  '/sys/class/drm/card0/device/uevent:DRIVER=amdgpu',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/pwm1:0',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/pwm1_max:255',
+].join('\n')
+const gZ = sysfs.parseSysfs(PWM_ZERO)
+eq('zero not null', gZ.length === 1 ? gZ[0].fanSpeed : null, 0)
+
+console.log('SYSFS_CMD includes pwm1 and pwm1_max:')
+eq('pwm1 in command', sysfs.SYSFS_CMD.includes('/pwm1'), true)
+eq('pwm1_max in command', sysfs.SYSFS_CMD.includes('/pwm1_max'), true)
+
+console.log('pwm1_max vs pwm1 order guard:')
+const PWM_DISTINCT = [
+  '/sys/class/drm/card0/device/uevent:DRIVER=amdgpu',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/pwm1:100',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/pwm1_max:255',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/fan1_input:1000',
+  '/sys/class/drm/card0/device/hwmon/hwmon2/fan1_max:3200',
+].join('\n')
+const gDist = sysfs.parseSysfs(PWM_DISTINCT)
+eq('pwm1=100, pwm1_max=255 gives 39% (not fan1 31%)', gDist.length === 1 ? gDist[0].fanSpeed : null, 39)
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -437,6 +437,7 @@ function parseRocmSmi(jsonText) {
       let powerDraw = null
       let powerLimit = null
       let fanSpeed = null
+      let fanLevel = null
       let clockSm = null
 
       for (const key of Object.keys(card)) {
@@ -467,12 +468,23 @@ function parseRocmSmi(jsonText) {
           powerLimit = unwrapUnit(val)
         } else if (k.includes('max graphics package power') && powerLimit === null) {
           powerLimit = unwrapUnit(val)
-        } else if (k.includes('fan speed')) {
+        } else if (k.includes('fan speed') && k.includes('%')) {
+          // A real card reports BOTH "Fan speed (level)" (raw PWM, 0-255) and
+          // "Fan speed (%)". Match the percent key first so key order cannot
+          // leave a 0-255 level sitting in a field the UI draws as a percent.
           fanSpeed = unwrapUnit(val)
+        } else if (k.includes('fan speed') && k.includes('level')) {
+          fanLevel = unwrapUnit(val)
+        } else if (k.includes('fan speed')) {
+          if (fanSpeed === null) fanSpeed = unwrapUnit(val)
         } else if (k.includes('sclk clock speed')) {
           const m = String(val).match(/(\d+)/)
           if (m) clockSm = parseInt(m[1], 10)
         }
+      }
+
+      if (fanSpeed === null && fanLevel !== null) {
+        fanSpeed = Math.round(fanLevel / 255 * 100)
       }
 
       gpus.push({
