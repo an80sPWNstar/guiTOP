@@ -37,7 +37,12 @@ guiTOP/
 │   │   ├── service.js      # Per-host poll loop, emits {host, gpus, processes}
 │   │   ├── mock.js         # Synthetic GPU data for dev
 │   │   ├── claude-usage.js # Polls cswap list --json → session/week pct matching online account
-│   │   └── claude-swap.js  # Polls cswap list --json → per-account 5h/7d pct + display name
+│   │   ├── claude-usage-oauth.js # Same meters, sourced from a logged-in claude.ai session
+│   │   ├── claude-web.js   # claude.ai login/logout flow behind the OAuth collector
+│   │   ├── claude-swap.js  # Polls cswap list --json → per-account 5h/7d pct + display name
+│   │   ├── cswap-cmd.js    # Per-platform cswap invocation (cmd.exe shim on Windows only)
+│   │   ├── win-gpu-mem.js  # Windows per-process VRAM via perf counters (nvidia-smi reports N/A)
+│   │   └── win-proc-stats.js # Windows USER/CPU%/MEM%/TIME for the process table
 │   └── config/
 │       └── hosts.js        # Load + validate host list
 ├── renderer/
@@ -64,7 +69,9 @@ guiTOP/
    Each detected backend is then polled over local or SSH transport and the
    results merged (see AMD GPU Support below).
 3. Main pushes per-host payloads: `win.webContents.send('gpu-data', payload)`.
-4. Separately: `claude-usage.js` and `claude-swap.js` poll `cswap list --json` every 45s.
+4. Separately: `claude-usage.js` and `claude-swap.js` poll `cswap list --json` every 45s
+   (or the OAuth collector replaces the former — see Claude Usage Sources). `cswap-cmd.js`
+   decides how to invoke the CLI per platform; only Windows needs the `cmd.exe` shim.
 5. Renderer subscribes via `window.guiTOP.onData()` / `onClaudeUsage()` / `onClaudeSwap()`.
 
 ### Claude Usage Strip
@@ -73,6 +80,45 @@ guiTOP/
 - **Display name**: `GUITOP_DISPLAY_NAME` env var set in main.js; defaults to an80sPWNstar. Falls back to email prefix if unset.
 - **Widget**: `renderClaudeStrip()` in renderer.js. Dock cycles top → bottom → off.
 - **Dev endpoint**: `GET /claude/toggle` — cycles dock position.
+- **AUTO chip**: `cswap auto` is a foreground loop with no daemon, pidfile or lockfile, so the only way to know it runs is to look for the process. `detectAuto()` in `claude-swap.js` matches the COMMAND LINE, never the process name: `uv`-installed tools run as `python.exe` with the shim path in their arguments. Windows uses one `Get-CimInstance Win32_Process` call (~230 ms), other platforms use `pgrep -af cswap`, which reports no start time so `autoSinceMin` is null there. A detection that cannot run reports "not detected" rather than an error.
+
+## Claude Usage Sources
+
+Two interchangeable sources feed the same session and week meters; which one runs is chosen by the `useOAuthClaude` setting in `settings.json`. The default, false, runs `claude-usage.js`, polling the cswap CLI every 45 seconds. True runs `claude-usage-oauth.js`, which calls `https://api.anthropic.com/api/oauth/usage` every 5 minutes, backing off to 30 seconds while no token is available or after a failure with no cached reading.
+
+The OAuth collector reads an access token from the Claude CLI credential store, trying five candidate paths — `~/.claude/.credentials.json` first, then the Roaming and Local AppData variants for Claude and Claude Code — and expects the field `claudeAiOauth.accessToken`. It sends that token as a Bearer header alongside a hardcoded, date-stamped `anthropic-beta: oauth-2025-04-20`. That header is a maintenance liability: it will need updating if the API revs.
+
+Its payload adds `via: 'oauth'` so the renderer can tell the sources apart, reports `sessionPct`/`weekPct` plus `sessionResetAt`/`weekResetAt`, and can carry a per-model weekly window under a `fable` key. `todayTokens` is always null on this path. A missing credential file is reported as `ok: false` with `missingToken: true` rather than as an error, so the UI can distinguish "not logged in" from "request failed". Toggling the setting at runtime stops the live collector and starts the other one — no restart needed, and no check that an OAuth token exists before switching. Which source is live is not exposed over the dev API; read the `useOAuthClaude` key in `settings.json`.
+
+## Claude Web Session
+
+`claude-web.js` implements an optional claude.ai browser login, exposed to the renderer through the `claude:login`, `claude:logout` and `claude:status` IPC handlers. Login opens a 1000x700 BrowserWindow on `https://claude.ai/login`, having first cleared any existing `sessionKey` cookie so a stale session cannot be mistaken for a fresh login. The window's User-Agent is overridden with a normal Chrome string, with the Electron and guiTOP tokens stripped, because Cloudflare rejects the default Electron agent. Popups via `window.open` are blocked. Capture watches the `cookie-changed` event for `sessionKey` and also polls every 500 milliseconds in case the event is missed; the whole flow times out after 5 minutes.
+
+The captured `sessionKey` is encrypted with Electron `safeStorage` and written to `claude-web.json` in userData, always at mode `0600` — the file holds a full account credential and the default mode would leave it readable by every local account.
+
+There is nowhere safe to put the key when the OS has no keyring, which on Linux means any box with no keyring daemon running. `safeStorage.isEncryptionAvailable()` returning false therefore triggers a one-time consent dialog, defaulting to refusal. Refusing is not an error: the key stays in a module-level variable so the session works until the app exits, `status()` reports `keyStorage: 'memory'`, and the Settings dialog says the login will not be saved. Accepting writes it in plaintext and reports `keyStorage: 'plaintext'`. An existing plaintext key counts as prior consent and is not re-asked. A refused save also clears any key already on disk, so a stale credential cannot silently log the next launch in as the previous session. On Windows DPAPI is always available, so this path never runs there.
+
+After login the organization id is discovered by fetching `/api/organizations` in a hidden BrowserWindow, preferring an organization of type `team` among those with the `chat` capability, and stored alongside the key; failing to discover it is non-fatal and login still reports success. That hidden fetch re-plants the `sessionKey` cookie before loading, times out after 30 seconds, and treats the strings `Just a moment` and `Enable JavaScript and cookies to continue` in the response body as a Cloudflare challenge — matching on English challenge text is fragile.
+
+Logout deletes `claude-web.json`, removes the `sessionKey` cookies, and clears localStorage, sessionStorage and cacheStorage for `https://claude.ai`. `fetchUsage` in `claude-web.js` is exported but never called — dead code that duplicates what the OAuth collector already does.
+
+## Window State, Tray and Startup
+
+Preferences live in `settings.json` under the Electron userData directory: `launchAtStartup`, `minimizeToTray`, `useOAuthClaude`, `windowBounds` and `windowMaximized`. Window geometry is saved on resize, move, maximize and unmaximize, debounced by 500 milliseconds. The saved size is `getNormalBounds`, the restored un-maximized size, so a window closed while maximized still has a sane size to return to.
+
+On launch, saved coordinates are honoured only if the rectangle still intersects the work area of a display that currently exists; otherwise only width and height are applied and the OS places the window. This stops a window last closed on a monitor that is now unplugged from opening off-screen. A malformed saved size falls back to 960 by 680, and sizes below the 320 by 200 minimum are rejected.
+
+The tray is created at startup and cannot be toggled without a restart. Its menu is Show, Hide, Settings and Quit; Settings sends an `open-settings` message to the renderer rather than opening anything in the main process. Double-clicking the tray icon toggles window visibility. With `minimizeToTray` enabled and a tray present, closing the window hides it instead of quitting and `window-all-closed` does not quit the app; with the setting off, or with no tray, closing quits. `launchAtStartup` calls `app.setLoginItemSettings({ openAtLogin })`, which takes effect immediately as a system setting but only changes behaviour at the next login, and is re-applied from `settings.json` on every startup.
+
+The window and tray icon come from `assets/images/app-icon.ico` on Windows and `assets/images/app-icon.png` elsewhere, because Electron does not read `.ico` on Linux. The PNG is the 256 pixel image unpacked from the same ICO.
+
+## Windows Process Telemetry
+
+Two collectors exist only because `nvidia-smi` on Windows cannot supply fields it supplies on Linux. Both poll independently of the 1 second GPU loop, both swallow their own errors and serve the last good reading, and both are looked up by pid from `service.js`.
+
+`win-gpu-mem.js` fills per-process VRAM, which `nvidia-smi` reports as `N/A` under WDDM. It runs a PowerShell command every 3 seconds that reads the `\GPU Process Memory(*)\Dedicated Usage` performance counter and maps adapter LUIDs to adapter names from `HKLM\SOFTWARE\Microsoft\DirectX`. Counter instances are named `pid_<pid>_luid_<hi>_<lo>`, so the pid and the adapter both come out of the instance name. `lookup(pid, gpuName)` sums every LUID belonging to that adapter name and returns megabytes. A busy flag skips a poll while the previous one is still running.
+
+`win-proc-stats.js` fills the USER, CPU%, MEM% and TIME columns of the process table. It polls `Get-Process` every 3 seconds for `Id`, `UserName`, `SessionId`, `CPU`, `WorkingSet64` and `StartTime`, and computes CPU percent from the delta in cumulative CPU seconds between two samples, requiring at least half a second between them. `Get-Process -IncludeUserName` needs elevation, so it is attempted and falls back to a plain `Get-Process`, which leaves `UserName` null. A second poll runs `quser` every 10 seconds to build a session-id to user-name map, and the lookup merges that name in when the primary path gave none. `quser` exits non-zero when there are no sessions, which is a normal state and not treated as failure.
 
 ## Commands
 | Command | What |
@@ -85,12 +131,19 @@ guiTOP/
 | `npm run build` | Windows NSIS .exe (Windows only, needs wine from WSL) |
 | `npm run build:win` | Windows .exe from WSL (delegates to PowerShell) |
 | `npm run build:linux` | Linux AppImage + .deb (from WSL/Linux) |
+| `npm run build:dir` | Unpacked Windows build — fast check that packaging/icons resolve |
 | `curl localhost:17580/screenshot` | Screenshot API |
 | `curl localhost:17580/claude/toggle` | Toggle Claude strip |
 | `curl localhost:17580/skin/bars\|gauges\|corvette` | Switch skin |
 | `curl localhost:17580/tab/single\|multi` | Switch tab |
+| `curl localhost:17580/host/<index>` | Switch the Single tab to host N |
+| `curl localhost:17580/procs/toggle` | Toggle the process table |
+| `curl "localhost:17580/resize?w=&h="` | Resize the window (self-verify responsive layout) |
 | `curl localhost:17580/gpu/backends` | Which backend each host resolved to + null metrics |
 | `curl localhost:17580/debug/strip` | Claude strip geometry + element overlap check |
+| `curl localhost:17580/debug/gauges` | Gauges skin geometry dump |
+| `curl localhost:17580/debug/corvette` | Corvette skin geometry dump |
+| `curl localhost:17580/debug/claude-config` | Opens the Claude accounts modal, reports display + row count |
 
 ## Build Notes
 - **Cross-compile Windows from WSL**: use `npm run build:win` (PowerShell delegation). Direct `npm run build` fails — needs wine.
@@ -107,7 +160,9 @@ Installation does not guarantee functionality. Detection reports every backend i
 
 Since all AMD tools describe the same physical cards, exactly one may serve a host or every card would be listed twice. NVIDIA is independent and is always polled alongside. On hybrid hosts results merge with offset indices so display indices stay unique, while the per-vendor index is preserved in `nativeIndex`. Every GPU object includes a `vendor` field set to either `'nvidia'` or `'amd'`. DRM card numbering is neither dense nor guaranteed to start at zero — an observed machine had its only GPU at `card1` — so the sysfs backend renumbers the cards it keeps to 0..N-1 and stores the real DRM number in `drmCard`.
 
-Field coverage varies between consumer Radeon and Instinct cards, and the `amd-smi` JSON schema is unstable across ROCm versions. Parsing is therefore defensive: unexpected payloads result in an empty list rather than an exception, and missing individual metrics resolve to `null` instead of discarding the entire card. APUs often lack a `product_name` file, in which case the card is named from its PCI device id.
+Field coverage varies between consumer Radeon and Instinct cards, and the `amd-smi` JSON schema is unstable across ROCm versions. Parsing is therefore defensive: unexpected payloads result in an empty list rather than an exception, and missing individual metrics resolve to `null` instead of discarding the entire card. A `product_name` file is not guaranteed — an observed discrete RX 9070 XT had none — in which case the card is named from its PCI device id.
+
+`rocm-smi` reports several metrics twice under different keys, so branch order matters where the parser matches on substrings. Fan speed arrives as both `Fan speed (level)` (raw PWM, 0-255) and `Fan speed (%)`; the percent key is matched first and the level is only converted (`level / 255`) when no percent key is present. `real-hardware.test.js` re-parses the same capture with its keys reversed to keep that independent of whatever order the tool emits.
 
 Windows AMD support is intentionally omitted. Neither `amd-smi` nor `rocm-smi` ships for Windows. While existing Windows performance counters can provide GPU utilization and per-process VRAM usage, they cannot report temperature, power, clock speeds, or total VRAM. This would result in incomplete card representations. Full Windows support would require a native addon integrating LibreHardwareMonitor or the AMD ADLX SDK.
 
@@ -115,7 +170,11 @@ Windows AMD support is intentionally omitted. Neither `amd-smi` nor `rocm-smi` s
 
 Parsers were developed against documented schemas and synthetic fixtures. Verify new fields against real hardware output before relying on them.
 
-Status: the **sysfs** reader is now pinned to a real capture (Radeon 8060S / Strix Halo APU, ROCm 7.2) in `test/real-hardware.test.js`, and every field it produced was correct. The **amd-smi** and **rocm-smi** parsers have still never run against real hardware — that machine had neither tool working (`amd-smi` absent, `rocm-smi` aborting). Captures from an Instinct or a ROCm 6 box would close that gap.
+Status: the **sysfs** reader and the **rocm-smi** parser are both pinned to real captures from a Sapphire RX 9070 XT (Navi 48, gfx1201, discrete — an earlier note misidentified this machine as a Radeon 8060S APU) on ROCm 7.2, in `test/real-hardware.test.js`. Every field both produced was correct apart from the fan-percent branch order fixed alongside that capture. The **amd-smi** parser has still never run against real hardware; `amd-smi` was absent on that box. A capture from an Instinct or a ROCm 6 machine would close the last gap.
+
+Fan percent has two possible bases and the card exposes both. `fan1_input / fan1_max` is a ratio of tachometer RPM; `pwm1 / pwm1_max` is the duty cycle actually being driven. RPM does not scale linearly with duty, so on the same card at the same instant they read 31% and 35%. A matched-moment capture settled which one AMD's own tools show: `rocm-smi`'s `Fan speed (level)` was the integer 89, byte-identical to `pwm1`, with `pwm1_max` at 255 — it reads the file rather than deriving anything. The sysfs reader therefore prefers PWM and falls back to the RPM ratio only when `pwm1_max` is missing, since assuming a divisor of 255 is how a fan meter ends up reading 200%. It is deliberately **not** gated on `pwm1_enable`, which does not exist on that card; requiring it would force the RPM fallback on exactly the hardware the fix targets.
+
+One cosmetic disagreement remains: `rocm-smi` numbers the card `card0` while the DRM tree exposes it as `card1`; each backend renumbers densely on its own, so this is harmless but will confuse anyone comparing raw output.
 
 Run the following command on the target AMD machine to generate a human-readable summary:
 
@@ -159,17 +218,21 @@ Current test suites:
 
 *   `test/amd-smi.test.js`: Validates `amd-smi` and `rocm-smi` parsers against fixtures for both modern nested (value/unit) and legacy flat JSON shapes.
 *   `test/amd-sysfs.test.js`: Validates the sysfs reader.
-*   `test/real-hardware.test.js`: Pins the sysfs reader to a real capture (Radeon 8060S / Strix Halo APU, ROCm 7.2, GPU at `card1`, no `product_name`) and guards that the `rocm-smi` query stays off the overdrive clock table that aborts on ROCm 7.2.
+*   `test/real-hardware.test.js`: Pins both the sysfs reader and the `rocm-smi` parser to real captures from the same machine (Sapphire RX 9070 XT, Navi 48, gfx1201, ROCm 7.2, GPU at `card1`, no `product_name`). It re-parses the `rocm-smi` capture with its keys reversed, since several metrics arrive under two keys and substring matching must not depend on emission order. It also guards that the `rocm-smi` query stays off the overdrive clock table that aborts on ROCm 7.2.
 *   `test/fallback.test.js`: Validates backend slot planning and the best-first fallback walk — a present-but-broken tool must not take a host down while a working backend sits behind it.
 *   `test/merge.test.js`: Validates mixed-vendor index merging logic.
 *   `test/commands.test.js`: Guards the integrity of fixed remote command strings.
+*   `test/claude-web.test.js`: Covers where the claude.ai session key ends up — encrypted, plaintext-by-consent, or memory-only after refusal — plus file mode, prior-consent handling, stale-key clearing and logout. `electron` is stubbed in the module cache, since this is main-process code that cannot be driven headlessly.
+*   `test/cswap.test.js`: Validates the per-platform cswap invocation and `cswap auto` detection — command-line matching against real `uv`-launched command lines, and both PowerShell date serialisations.
 
 **Exit Code Handling**: `ssh.js` rejects connections when a remote command exits with a non-zero status. Both the backend probe command and the final sysfs dump command conclude with shell tests that legitimately fail on healthy machines. Both commands must explicitly force a zero exit code. `commands.test.js` asserts this behavior.
 
-**Debug Endpoints**: Two endpoints are available on port `17580` for debugging:
+**Debug Endpoints**: See the Commands table for the full list on port `17580`. The four that report state rather than driving the UI:
 
 *   `GET /gpu/backends`: Reports the resolved backend for each host and lists any null metrics per GPU.
 *   `GET /debug/strip`: Reports the Claude usage strip geometry and identifies any overlapping elements.
+*   `GET /debug/gauges` and `GET /debug/corvette`: Dump per-skin element geometry, for checking a layout at a given window size without eyeballing a screenshot.
+*   `GET /debug/claude-config`: Despite the name, this *drives* the UI rather than reporting state — it clicks the Claude accounts button and reports whether the modal opened and how many account rows it holds.
 
 **Mock Data**: Launch the application with the `--mock-amd` flag to test the UI against sparse AMD telemetry. This mode feeds mock data shaped like AMD outputs, deliberately omitting fan speed and, on certain cards, power cap data.
 

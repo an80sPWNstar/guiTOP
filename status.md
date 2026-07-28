@@ -1,24 +1,111 @@
 # guiTOP — Session Handoff
 
-_Last updated: 2026-07-25 v0.3.1. Read this + `CLAUDE.md` once at session start._
+_Last updated: 2026-07-27. Read this + `CLAUDE.md` once at session start._
 
-## RESUME HERE — open item
+## RESUME HERE — uncommitted work, held on purpose
 
-**v0.3.2 is shipped.** Waiting on the AMD tester to confirm his machine now appears. He was on
-v0.3.1, which showed his box as a dead host; send him
-https://github.com/an80sPWNstar/guiTOP/releases/tag/v0.3.2 if he has not been told.
+**Nothing from 2026-07-27 is committed.** User decided to HOLD everything in the working tree
+and ship it as ONE release once the tester answers on the fan-percent question below. That
+answer has now arrived and the fix is in, so the release is unblocked — but still do not
+commit or bump the version without asking. Tests pass 8/8, 229 assertions.
 
-Remaining validation gap: the **amd-smi** and **rocm-smi** parsers have still never run
-against real hardware. The capture we got had `amd-smi` absent and `rocm-smi` aborting, so
-only the **sysfs** reader is proven. A capture from an Instinct card or a ROCm 6 box would
-close it. Still-unverified guesses live in `src/collectors/amd-smi.js`: `pickFan()` (RPM vs
-percent vs raw PWM), the power-cap key name, and `toMib()`'s "over 1,000,000 means bytes"
-fallback.
+**Fan-percent question: ANSWERED and FIXED (2026-07-27).** Apollo confirmed from a
+matched-moment hwmon capture on the RX 9070 XT (`/sys/class/hwmon/hwmon2`, `0000:2d:00.0`):
+`pwm1` = 89, `pwm1_max` = 255, 89/255 = 34.9% = the 35% `rocm-smi` reports, and `rocm-smi`'s
+`Fan speed (level)` is the integer 89 — literally `pwm1`, not derived. The RPM ratio was off
+by the predicted ~4 points. `src/collectors/amd-sysfs.js` now prefers `pwm1 / pwm1_max` and
+falls back to `fan1_input / fan1_max` only when `pwm1_max` is absent.
 
-### What the real capture (2026-07-26) taught us
+Two traps in that fix, both load-bearing:
+- **`pwm1_enable` does not exist on this card.** Do not gate the PWM path on it — that would
+  force the RPM fallback on exactly the hardware the fix targets. (`pwm1_min` and `fan1_min`
+  do exist, both 0.)
+- **Read `pwm1_max`, never hardcode 255.** It happens to be 255 here. Guessing a divisor is
+  how a fan meter ends up reading 200%.
 
-Machine: Radeon 8060S / Strix Halo APU (PCI `1002:7550`), CachyOS, ROCm 7.2, rocm-smi 4.0.0.
-Capture kept at `E:\Downloads\gpuprobe.json`; distilled into `test/real-hardware.test.js`.
+Still worth having when he next runs it: a full `node tools/gpu-probe.js --json` with `pwm1`
+in it, so `test/real-hardware.test.js` can pin the sysfs fan value at 35 instead of the 31 the
+pre-pwm1 capture forces.
+
+Also open: `fetchUsage` in `src/collectors/claude-web.js` is exported and never called —
+dead code, user has not said whether to delete it. And the bottom dock position was never
+swept for the strip layout fix (only the top dock was).
+
+Still-unvalidated: the **amd-smi** parser has never run against real hardware (`amd-smi` was
+absent on the only AMD box we have access to). Unverified guesses live in
+`src/collectors/amd-smi.js`: `pickFan()` (RPM vs percent vs raw PWM), the power-cap key name,
+and `toMib()`'s "over 1,000,000 means bytes" fallback. A capture from an Instinct card or a
+ROCm 6 machine would close it. **rocm-smi is now proven** — see below.
+
+### Session 2026-07-27 — second capture, then four fixes while waiting
+
+Two files arrived: `E:\Downloads\gpu-probe-v032.json` and `E:\Downloads\rocm-smi-working-capture.json`
+(the latter hand-run, because our probe only issued `--showallinfo`, which is exactly the call
+that aborts there — now fixed with a `rocm-smi.narrowed` probe).
+
+1. **The 07-26 hardware identification was WRONG.** That machine is a discrete **Sapphire RX
+   9070 XT** (Navi 48, gfx1201, PCI `1002:7550`), not a Radeon 8060S / Strix Halo APU. Corrected
+   in `CLAUDE.md` and `test/real-hardware.test.js`. Consequence: "APUs have no product_name" was
+   the wrong lesson — a *discrete* card had none either.
+2. **`parseRocmSmi` was correct on every real field except one key-order dependency.** The card
+   emits BOTH `Fan speed (level)` (raw PWM 0-255 = 89) and `Fan speed (%)` (= 35), and a bare
+   `k.includes('fan speed')` let whichever arrived last win — 89 would have rendered as 89% fan.
+   Percent is now matched first, level only used as `level / 255`. The test re-parses the same
+   capture with its keys reversed so nothing can depend on emission order again.
+3. **App icon wired** (deferred item, done). electron-builder had no `icon` key. Now `win.icon` +
+   `linux.icon`, and `main.js` picks `.ico` on Windows / `.png` elsewhere for BrowserWindow and
+   Tray, because Electron does not read `.ico` on Linux. Every entry in that ICO is PNG-encoded,
+   so `assets/images/app-icon.png` was unpacked from its 256px entry — no new art. Verified the
+   icon bytes are present in the built `guiTOP.exe`.
+4. **Window geometry persistence** (deferred item, done). Debounced 500ms save of `getNormalBounds`
+   + maximized flag; saved coordinates honoured only if the rect still intersects a live display's
+   `workArea`. Verified: 1240x764 and 800x600 both survive a restart, off-screen coords recover.
+5. **cswap AUTO detection** (open since 07-17, was hardcoded `autoOn: false`). `cswap auto` is a
+   foreground loop — no daemon, no pidfile — so detection has to find the process.
+   **KEY FACT: `uv`-installed tools run as `python.exe` with the shim path in the command line,
+   so the process NAME tells you nothing; the COMMAND LINE must be matched.** One
+   `Get-CimInstance Win32_Process` call, measured 230ms. `wmic` is gone from current Windows.
+   `pgrep -af cswap` elsewhere (no start time there, so `autoSinceMin` is null).
+   **GOTCHA: `powershell.exe` is Windows PowerShell 5.1, whose `ConvertTo-Json` serialises a
+   DateTime as `/Date(1769...)/` — `new Date()` on that yields Invalid Date.** Both that and the
+   PS7 ISO form are handled and tested. Live-verified against a real `cswap auto --dry-run`.
+6. **Cross-platform bug:** `cmd.exe /c cswap` was hardcoded at 4 call sites, so the Claude strip
+   was dead on the Linux AppImage/.deb builds. Centralised in `src/collectors/cswap-cmd.js`.
+7. **claude.ai session key hardened.** `writeStore` had no mode, so `claude-web.json` landed at
+   0644 — world-readable, and that applied to the ENCRYPTED blob too. Now 0600 always. When
+   `safeStorage` reports no keyring (Linux with no keyring daemon; never on Windows/DPAPI) a
+   one-time consent dialog appears, defaulting to REFUSE; refusing keeps the key in memory for
+   that run only, and also clears any key already on disk so a stale credential cannot silently
+   log the next launch in as the previous session. Prior plaintext counts as consent. Settings
+   shows encrypted / plaintext / memory. `test/claude-web.test.js` stubs `electron` in
+   `require.cache` to drive this headlessly.
+8. **Claude strip wrap regression, caused by item 5 and now fixed.** `autoOn` had been false
+   forever, so that field always read `OFF`; `ON · 23M` pushed the strip past its width budget
+   and — per the 07-25 "text never shrinks, the strip wraps" rule — AUTO wrapped alone onto a
+   second row, which reads as a layout bug. Fixed in three parts: `TOKENS TODAY` now hides when
+   `todayTokens` is null (neither usage source fills it since the JSONL heuristic died, so it was
+   ~110px showing `--`), the gap cap dropped to 18px, and divider + chips + AUTO were grouped
+   into a `.cu-swap` cluster that wraps as a unit.
+   **THE REAL TRAP, worth remembering: a flex item with `flex-shrink: 0` is laid out at its
+   max-content width, so an inner `flex-wrap` NEVER triggers and the cluster overflows instead
+   of wrapping.** Two fixes were wasted before spotting that. `.cu-swap` is deliberately
+   shrinkable; the chips and AUTO inside keep their own `flex-shrink: 0`.
+   Verified with `/debug/strip` (`stripHeight` 38 = one row) across 1400 → 320px, on all three
+   skins, with both real data and `GUITOP_SWAP_MOCK=1` (3 accounts, AUTO ON): single row down to
+   900px with the real single account, no overflow and no overlap at ANY width. Was breaking at
+   1240px before.
+
+### Verification gotcha found this session
+
+`GET /screenshot` does NOT return the PNG. It writes it to `%TEMP%\guitop-screenshot.png` and
+returns `{"ok":true,"path":...}` — 82 bytes of JSON. Saving the response body gives an 82-byte
+file that is not an image. Read the file at that path instead.
+
+### What the earlier capture (2026-07-26) taught us
+
+Same machine as above (correctly identified as the RX 9070 XT this time), CachyOS, ROCm 7.2,
+rocm-smi 4.0.0. Capture kept at `E:\Downloads\gpuprobe.json`; distilled into
+`test/real-hardware.test.js`.
 
 1. **The sysfs reader was exactly right.** Every field it produced checked out against the
    raw capture: 1698/16304 MiB, 32 C edge, 52 W, 374 W cap, fan 1533/5000 = 31%, 1943 MHz
@@ -33,15 +120,14 @@ Capture kept at `E:\Downloads\gpuprobe.json`; distilled into `test/real-hardware
 4. **DRM numbering does not start at 0.** The only GPU was `card1`, so it rendered as "GPU 1"
    and the merge offset left a phantom slot. sysfs cards are now renumbered 0..N-1 with the
    real number kept in `drmCard`.
-5. **APUs have no `product_name`**, so the card names itself from its PCI id — displays as
-   "AMD GPU 7550" rather than "Radeon 8060S". Cosmetic, left alone. If it ever matters, the
+5. **This card has no `product_name`** (originally written up as an APU trait — it is not, the
+   card is discrete), so it names itself from its PCI id and displays as "AMD GPU 7550" rather
+   than "Radeon RX 9070 XT". Cosmetic, left alone. If it ever matters, the
    fix is a one-shot lookup in `/usr/share/hwdata/pci.ids` (present on most distros) cached
    per host; do NOT interpolate the device id into a shell command.
 
-Also deferred (do these together in one release, per user):
-- **App icon**: `assets/images/app-icon.ico` is committed but electron-builder has no `icon`
-  key, so all builds log "default Electron icon is used". User accepts the generic icon for now.
-- **AUTO cswap-daemon detection**: still hardcoded off (open since 2026-07-17).
+Both items that were deferred here — the app icon and AUTO cswap detection — are DONE as of
+2026-07-27, uncommitted. See the session notes above.
 
 ## Current State
 
