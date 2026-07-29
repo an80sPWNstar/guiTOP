@@ -33,11 +33,21 @@ Still worth having when he next runs it: a full `node tools/gpu-probe.js --json`
 in it, so `test/real-hardware.test.js` can pin the sysfs fan value at 35 instead of the 31 the
 pre-pwm1 capture forces.
 
-**Open defect in the shipped v0.3.3 Windows installer:** it contains a Linux ELF
-`cpufeatures.node`. Harmless in practice (`ssh2` falls back), but wrong. Three ways out, user has
-not picked: leave it; exclude the optional `cpu-features` from packaging via electron-builder
-`files` and re-upload the asset; or install the MSVC build tools and rebuild it properly. Full
-detail under Linux build round-trip below.
+**ELF-in-the-installer defect: FIXED.** `"!node_modules/cpu-features/**"` added to
+electron-builder `files`, `.exe` rebuilt and the release asset replaced via
+`gh release upload --clobber` (78,986,195 bytes, ~130KB smaller — the dropped `.node`).
+`ssh2` was verified to load and connect with the module fully absent: a remote SSH host still
+reported its 3 GPUs. It only ever provided hardware-AES detection for cipher ordering, which is
+unmeasurable against a few hundred bytes of CSV per second.
+
+Note the exclusion is platform-agnostic, so future **Linux** builds drop it too. The published
+`.AppImage` and `.deb` were built before the change and still contain it — harmless, they hold
+the correct ELF. Not worth rebuilding for.
+
+Should Windows AMD support ever be attempted, the MSVC toolchain becomes a hard prerequisite
+(`CLAUDE.md` notes it needs a native addon over LibreHardwareMonitor or AMD ADLX). `npm rebuild
+--build-from-source` fails on this box for that reason, and its absence is also why
+`electron-rebuild` silently used a prebuilt binary and let the ELF through.
 
 **Linux GUI could not be validated locally.** The v0.3.3 AppImage launches under WSLg, the main
 process runs, the dev server binds 17580 and `/gpu/backends` returns correct mock data — then
