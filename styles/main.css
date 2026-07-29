@@ -267,12 +267,16 @@ body {
   text-shadow: 0 0 8px currentColor;
 }
 
+/* The tuck behind the centre gauges is intentional, but the gauge width became
+   responsive (clamp above) while this overlap stayed a fixed -10px. That was 11%
+   of the original fixed 88px canvas and grows to ~30% at the 33px floor, burying
+   the needle base on narrow cards. Expressed in cqw it stays proportional. */
 .gauge-col-left {
-  margin-right: -10px;
+  margin-right: clamp(-10px, -1.4cqw, -3px);
 }
 
 .gauge-col-right {
-  margin-left: -10px;
+  margin-left: clamp(-10px, -1.4cqw, -3px);
 }
 
 /* ── Error state ─────────────────────────────── */
@@ -735,6 +739,25 @@ body {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   font-family: 'Rajdhani', sans-serif;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Thermometer drawn in CSS rather than written as an emoji: on Linux with no
+   emoji font installed the character rendered as a tofu box. A pseudo-element
+   also survives the textContent assignment in the update path, which wipes
+   child nodes, and currentColor tracks the temperature colour set from JS. */
+.bar-temp::before {
+  content: '';
+  flex-shrink: 0;
+  width: 0.22em;
+  height: 0.62em;
+  background: currentColor;
+  border-radius: 0.11em 0.11em 0 0;
+  /* Positive spread makes the bulb wider than the stem, which is the only thing
+     that makes the shape read as a thermometer at 14-20px. */
+  box-shadow: 0 0.3em 0 0.055em currentColor;
 }
 
 .bar-row {

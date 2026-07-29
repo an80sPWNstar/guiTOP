@@ -46,7 +46,7 @@ const GpuCardBars = (() => {
         </div>
         <div class="bar-main">
           <span class="bar-label">GPU ${gpu.index}</span>
-          <span class="bar-temp" data-val="temp">🌡 ${temp}</span>
+          <span class="bar-temp" data-val="temp">${temp}</span>
         </div>
         <div class="bar-row">
           <div class="bar-track">
@@ -79,7 +79,10 @@ const GpuCardBars = (() => {
     const tempEl = cardEl.querySelector('[data-val="temp"]')
     if (tempEl) {
       const t = gpu.temperature
-      tempEl.textContent = '🌡 ' + (t != null ? t + '°C' : '—')
+      // The thermometer is a CSS ::before on .bar-temp, not a character: the emoji
+      // rendered as a tofu box on a Linux box with no emoji font. A pseudo-element
+      // also survives this textContent assignment, which wipes child nodes.
+      tempEl.textContent = t != null ? t + '°C' : '—'
       tempEl.style.color = tempColor(t)
     }
 
