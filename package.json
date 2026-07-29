@@ -37,7 +37,8 @@
       "renderer/**/*",
       "styles/**/*",
       "assets/**/*",
-      "!renderer/skins/gauges.js"
+      "!renderer/skins/gauges.js",
+      "!node_modules/cpu-features/**"
     ],
     "win": {
       "target": "nsis",
