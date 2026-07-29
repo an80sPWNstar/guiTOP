@@ -49,7 +49,22 @@ Should Windows AMD support ever be attempted, the MSVC toolchain becomes a hard 
 --build-from-source` fails on this box for that reason, and its absence is also why
 `electron-rebuild` silently used a prebuilt binary and let the ELF through.
 
-**Linux GUI could not be validated locally.** The v0.3.3 AppImage launches under WSLg, the main
+**Linux GUI IS NOW VALIDATED — on .70, not in WSL.** The repeatable rig: build in the WSL checkout,
+`scp` the AppImage to `pogibry@192.168.50.70`, `rm -rf squashfs-root && ./guiTOP-*.AppImage
+--appimage-extract`, then `xvfb-run -a -s "-screen 0 1600x900x24" ./squashfs-root/guitop
+--no-sandbox` and drive the `/screenshot` endpoint over SSH. That box already has `xvfb-run` and
+libfuse2, 138G free. Run the `guitop` binary directly — `AppRun` fails with `/guitop: No such file
+or directory` because APPDIR is unset. `viz_main_impl` GPU-init errors under xvfb are benign; the
+app stays up, unlike under WSLg.
+
+Verified there at commit `bb27d07`: all 3 Tesla P100s detected via nvidia-smi (only `fanSpeed`
+null, correct for P100), bars + gauges render, the CSS thermometer replaces the tofu box, and the
+gauge side-arcs are no longer buried. llama.cpp on that box was undisturbed throughout.
+
+**New, unfixed, found during that pass:** at a 520px-wide window the bars skin's "Show Processes"
+button overlaps the fixed status bar at the bottom of the window. Cosmetic, narrow widths only.
+
+**Historical note — WSL could not do this.** The v0.3.3 AppImage launches under WSLg, the main
 process runs, the dev server binds 17580 and `/gpu/backends` returns correct mock data — then
 Chromium dies with `FATAL: GPU process isn't usable. Goodbye.` after 15-25s. Three flag
 combinations tried (`--disable-gpu`, `--in-process-gpu`, `--use-gl=swiftshader`); all fail to
