@@ -100,7 +100,7 @@ There is nowhere safe to put the key when the OS has no keyring, which on Linux 
 
 After login the organization id is discovered by fetching `/api/organizations` in a hidden BrowserWindow, preferring an organization of type `team` among those with the `chat` capability, and stored alongside the key; failing to discover it is non-fatal and login still reports success. That hidden fetch re-plants the `sessionKey` cookie before loading, times out after 30 seconds, and treats the strings `Just a moment` and `Enable JavaScript and cookies to continue` in the response body as a Cloudflare challenge — matching on English challenge text is fragile.
 
-Logout deletes `claude-web.json`, removes the `sessionKey` cookies, and clears localStorage, sessionStorage and cacheStorage for `https://claude.ai`. `fetchUsage` in `claude-web.js` is exported but never called — dead code that duplicates what the OAuth collector already does.
+Logout deletes `claude-web.json`, removes the `sessionKey` cookies, and clears localStorage, sessionStorage and cacheStorage for `https://claude.ai`.
 
 ## Window State, Tray and Startup
 
@@ -235,6 +235,24 @@ Current test suites:
 *   `GET /debug/claude-config`: Despite the name, this *drives* the UI rather than reporting state — it clicks the Claude accounts button and reports whether the modal opened and how many account rows it holds.
 
 **Mock Data**: Launch the application with the `--mock-amd` flag to test the UI against sparse AMD telemetry. This mode feeds mock data shaped like AMD outputs, deliberately omitting fan speed and, on certain cards, power cap data.
+
+## Window Layout
+
+The window is a flex column at `height: 100vh` with `overflow: hidden` on `body`. Nothing is
+`position: fixed`. The tab bar, the Claude strip in either dock, and the status bar are ordinary
+flow items with `flex-shrink: 0`, and `.tab-panel.active` is the only scrolling element
+(`flex: 1 1 auto; min-height: 0; overflow-y: auto`). The status bar height lives in
+`--status-bar-h` rather than being repeated at each use.
+
+This replaced a fixed-position status bar that the panel compensated for with a magic
+`padding-bottom`. Padding only clears an overlay at maximum scroll, so at scroll-top any element
+at the end of the panel sat behind the bar — visible at narrow widths, where the grid drops to one
+column and the content overflows. A fixed bottom dock had the same defect, worse.
+
+`min-height: 0` on the scrolling panel is load-bearing. It is the column-direction cousin of the
+`flex-shrink: 0` trap recorded for the Claude strip: a flex item is laid out at its max-content
+size and will not shrink below it, so without that declaration the column overflows the viewport
+and the overlay behaviour returns.
 
 ## Code Standards
 - contextIsolation: true, nodeIntegration: false. Narrow contextBridge API.

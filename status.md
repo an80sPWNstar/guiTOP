@@ -8,9 +8,11 @@ _Last updated: 2026-07-27. Read this + `CLAUDE.md` once at session start._
 `b3d05ae` the AMD pwm1 fan fix, `42ce06d` the app work (AUTO chip, icon, window state,
 0600 session key), `f31c464` docs. Version and `package-lock.json` both at 0.3.3.
 
-**Not done and deliberately not started: no git tag, no GitHub release, no installers built.**
-Ask before doing any of those. v0.3.1 and v0.3.2 both shipped installers via a GitHub release,
-so a tester expecting one will not find it yet.
+**Tagged, released and shipped.** `v0.3.3` is tagged and published as a GitHub release —
+"AMD fan percentage from PWM, AUTO chip, hardened session key", 2026-07-28,
+https://github.com/an80sPWNstar/guiTOP/releases/tag/v0.3.3 — carrying all three installers:
+`guiTOP.Setup.0.3.3.exe` (78,986,195 bytes), `guiTOP-0.3.3.AppImage` (111,336,143 bytes)
+and `guitop_0.3.3_amd64.deb` (77,370,560 bytes).
 
 Apollo has been sent the relay: what changed, the two requests below, and the note that
 `amd-smi` remains the last unvalidated parser.
@@ -61,8 +63,31 @@ Verified there at commit `bb27d07`: all 3 Tesla P100s detected via nvidia-smi (o
 null, correct for P100), bars + gauges render, the CSS thermometer replaces the tofu box, and the
 gauge side-arcs are no longer buried. llama.cpp on that box was undisturbed throughout.
 
-**New, unfixed, found during that pass:** at a 520px-wide window the bars skin's "Show Processes"
-button overlaps the fixed status bar at the bottom of the window. Cosmetic, narrow widths only.
+**Found during that pass, FIXED 2026-07-30:** at a 520px-wide window the bars skin's "Show
+Processes" button overlapped the status bar. The cause was not cosmetic and not confined to bars.
+`.status-bar` was `position: fixed` and `.tab-panel` compensated with a magic `padding-bottom`,
+which only clears an overlay at maximum scroll — at scroll-top, where `/screenshot` captures, the
+button sat 11px behind the bar. Wide widths hid it because the multi-column grid does not overflow.
+Enlarging the padding could never fix that class of bug; it only moves the bad scroll window.
+
+With the Claude strip docked **bottom** the same defect was worse: the strip was also
+`position: fixed`, 60px tall when it wraps at 520px, and the button landed fully inside it with the
+page not scrollable at all.
+
+The fix promotes the corvette skin's already-verified viewport-filling column to global: `body` is
+a flex column at `height: 100vh` with `overflow: hidden`, `.tab-panel.active` is the only scroller
+(`flex: 1 1 auto; min-height: 0; overflow-y: auto`), and the status bar and both docks are ordinary
+flow items with `flex-shrink: 0`. A new `--status-bar-h` names the 26px that had been duplicated.
+Corvette's duplicated rules were deleted as now-global, its distinctive overrides kept verbatim.
+
+**`min-height: 0` on the panel is load-bearing** — it is the column-direction cousin of the
+documented `flex-shrink: 0` trap. Without it the flex item refuses to shrink below max-content
+height and the column overflows the viewport again.
+
+Verified in the real app on Windows at 3 skins x dock top/bottom/off x 520/1200/1240px, procs
+shown and hidden: status bar flush at the viewport bottom, zero overlaps from `/debug/strip`, the
+process table scrolling inside the panel. **This also closes the bottom-dock sweep** that had been
+open since the strip layout fix — the bottom dock renders correctly at every width tested.
 
 **Historical note — WSL could not do this.** The v0.3.3 AppImage launches under WSLg, the main
 process runs, the dev server binds 17580 and `/gpu/backends` returns correct mock data — then
@@ -73,12 +98,14 @@ strip layout. WSL cannot answer this, and it also has no real `/sys/class/drm` a
 only a virtualized `nvidia-smi`. The proposed answer is `xvfb-run` on .70 (real Linux, real
 NVIDIA) driving the existing `/screenshot` endpoint — headless, no desktop needed.
 
-Also open, all three unanswered by the user:
-- Tag + GitHub release + installers for v0.3.3 (see above).
-- `fetchUsage` in `src/collectors/claude-web.js` is exported and never called — dead code.
-- The **bottom** dock was never swept for the strip layout fix; only the top dock was verified.
-- main.js still has two hardcoded `cmd.exe` cswap call sites (`runCswapCmd`, and the `spawn`
-  for `add-token`) that never moved to `cswapCmd`, so they stay Windows-only.
+The bottom-dock sweep, open since the strip layout fix, is now done — see the layout rework above.
+
+Fixed 2026-07-30, uncommitted: the two hardcoded `cmd.exe` cswap call sites in main.js
+(`runCswapCmd` and the `add-token` `spawn`) now go through `cswapCmd`, so the Claude strip is no
+longer Windows-only. The two sites had used opposite argument conventions — one passed bare args,
+the other pre-baked `/c cswap` into its own array — and both now hand cswap-cmd the subcommand
+alone. Windows behaviour is byte-identical. The Linux `add-token` stdin path has still never
+executed anywhere; it needs a Linux box with cswap installed.
 
 **Separate project spun off:** `E:\vs_code_projects\lanllm` — a skill to make local-LLM
 delegation one step, plus a `PreToolUse` hook denying paid subagents until the free boxes have
@@ -280,9 +307,10 @@ Both items that were deferred here — the app icon and AUTO cswap detection —
 - **GitHub**: `an80sPWNstar/guiTOP` — **PUBLIC** as of 2026-07-25 (user confirmed intentional)
 - **gh CLI**: installed at `C:\Program Files\GitHub CLI\gh`, authed via `GH_TOKEN` env (scope
   `repo`). Use it for releases — the GitHub MCP tools have no release endpoints.
-- **Build output**: `dist\guiTOP Setup 0.3.2.exe` (75MB), `dist/guiTOP-0.3.2.AppImage` (103MB),
-  `dist/guitop_0.3.2_amd64.deb` (71MB). All unsigned.
-- **Release**: https://github.com/an80sPWNstar/guiTOP/releases/tag/v0.3.2
+- **Build output**: `dist\guiTOP Setup 0.3.3.exe` (75MB), `dist/guiTOP-0.3.3.AppImage` (106MB),
+  `dist/guitop_0.3.3_amd64.deb` (74MB) — published as `guiTOP.Setup.0.3.3.exe`,
+  `guiTOP-0.3.3.AppImage`, `guitop_0.3.3_amd64.deb`. All unsigned.
+- **Release**: https://github.com/an80sPWNstar/guiTOP/releases/tag/v0.3.3
 
 ## Git
 ```
