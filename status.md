@@ -60,11 +60,15 @@ or directory` because APPDIR is unset. `viz_main_impl` GPU-init errors under xvf
 app stays up, unlike under WSLg.
 
 Two traps in that rig, both hit on 2026-07-30:
-- **`scp` from WSL to .70 hangs forever.** The WSL home has no `~/.ssh` keys at all, so it falls
-  back to a password prompt that a non-interactive shell can never answer. Windows OpenSSH does
-  have key auth to that box (`~/.ssh/id_ed25519_familyllm`). Copy from Windows, not from WSL —
-  even though the AppImage is built in WSL. `-o BatchMode=yes` turns the hang into an immediate
-  `Permission denied` and is worth passing for that reason alone.
+- **`scp` from WSL to .70 used to hang forever — FIXED 2026-07-30.** The WSL home had no `~/.ssh`
+  keys at all, so it fell back to a password prompt a non-interactive shell can never answer.
+  WSL now has its own `id_ed25519` (`wsl-bryan@bryan-dt`), appended to .70's `authorized_keys`
+  as a third key alongside the two Windows ones, with a matching `~/.ssh/config` entry. Deliberately
+  a separate key, not a copy of the Windows one, so it can be revoked without cutting Windows off.
+  Verified with a non-interactive `scp -o BatchMode=yes`. Copy straight from the WSL checkout now.
+
+  Pass `-o BatchMode=yes` regardless: it turns any future auth gap into an immediate
+  `Permission denied` instead of a silent hang that reads like a slow transfer.
 - **`pgrep -f 'squashfs-root/guitop'` kills the ssh session running it**, because the remote
   `bash -c` command line contains that string and so matches itself. Bracket the first character
   — `pgrep -af '[s]quashfs-root/guitop'` — the same trick used for `ps | grep`.
