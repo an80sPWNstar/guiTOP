@@ -15,6 +15,7 @@ const { startClaudeUsageOAuth } = require('./src/collectors/claude-usage-oauth')
 const { startClaudeSwap } = require('./src/collectors/claude-swap')
 const { testConnect, execRemote } = require('./src/collectors/ssh')
 const { cswapCmd } = require('./src/collectors/cswap-cmd')
+const winPsHost = process.platform === 'win32' ? require('./src/collectors/win-ps-host') : null
 
 // cswap account-management: fixed argv arrays only, never shell-interpolated.
 // Same validation rules cswap itself enforces (see `cswap alias --help`).
@@ -57,6 +58,31 @@ const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json')
 function loadSettings() {
   try { return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8')) }
   catch { return { launchAtStartup: false, useOAuthClaude: false, minimizeToTray: false } }
+}
+
+// Ticking the checkbox is the ONLY thing that writes a startup entry.
+//
+// Electron registers whichever executable is currently running, so anything
+// that calls this on the app's behalf silently repoints the entry at whatever
+// copy happens to be running — a dist folder, or node_modules/electron. That
+// is not hypothetical: it is how a stray entry for the dev binary appeared.
+// The launch path therefore reads the OS state instead of writing it.
+function setLoginItem(openAtLogin) {
+  if (!app.isPackaged) return // a dev run must never claim the entry
+  app.setLoginItemSettings({ openAtLogin })
+}
+
+// The registry is the truth, not settings.json: the entry can be removed from
+// Task Manager or by an uninstall without this app ever hearing about it. Sync
+// the stored value so the checkbox shows what is actually configured.
+function syncLoginItemSetting() {
+  if (!app.isPackaged) return
+  const s = loadSettings()
+  const actual = app.getLoginItemSettings().openAtLogin
+  if (!!s.launchAtStartup !== actual) {
+    s.launchAtStartup = actual
+    saveSettings(s)
+  }
 }
 
 function saveSettings(s) {
@@ -419,7 +445,7 @@ ipcMain.handle('set-setting', (_e, key, value) => {
   s[key] = value
   saveSettings(s)
   if (key === 'launchAtStartup') {
-    app.setLoginItemSettings({ openAtLogin: !!value })
+    setLoginItem(!!value)
   }
   if (key === 'useOAuthClaude') {
     useOAuthClaude = !!value
@@ -512,11 +538,11 @@ app.whenReady().then(() => {
   createWindow()
   createTray()
 
+  // Read the startup entry rather than re-writing it; see setLoginItem.
+  syncLoginItemSetting()
+
   // Apply saved settings
   const settings = loadSettings()
-  if (settings.launchAtStartup) {
-    app.setLoginItemSettings({ openAtLogin: true })
-  }
   useOAuthClaude = settings.useOAuthClaude || false
 
   // Dev screenshot server — GET http://localhost:17580/screenshot → saves PNG, returns path
@@ -735,4 +761,5 @@ app.on('before-quit', () => {
   if (claudeUsageHandle) claudeUsageHandle.stop()
   if (claudeSwapHandle) claudeSwapHandle.stop()
   if (claudeOAuthHandle) claudeOAuthHandle.stop()
+  if (winPsHost) winPsHost.stop()
 })
