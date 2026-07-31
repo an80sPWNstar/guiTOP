@@ -6,6 +6,7 @@
 // same fixed strings remotely.
 
 const { execFile } = require('child_process')
+const stream = require('./nvidia-stream')
 
 // --query-gpu fields. `uuid` is included so we can map processes (which report
 // gpu_uuid) back to a gpu index without a third query.
@@ -22,10 +23,23 @@ const FORMAT = ['--format=csv,noheader,nounits']
 const gpuArgs = () => [`--query-gpu=${GPU_FIELDS.join(',')}`, ...FORMAT]
 const procArgs = () => [`--query-compute-apps=${PROC_FIELDS.join(',')}`, ...FORMAT]
 
+// The same two queries in nvidia-smi's own loop mode, so one child serves every
+// tick instead of one child per tick. `timestamp` leads the field list because
+// it is what marks the sample boundary; nvidia-stream strips it back off.
+const LOOP_SECONDS = 1
+
+const gpuLoopArgs = () => {
+  return [`--query-gpu=timestamp,${GPU_FIELDS.join(',')}`, ...FORMAT, '-l', String(LOOP_SECONDS)]
+}
+
+const procLoopArgs = () => {
+  return [`--query-compute-apps=timestamp,${PROC_FIELDS.join(',')}`, ...FORMAT, '-l', String(LOOP_SECONDS)]
+}
+
 // Run a single nvidia-smi query on THIS machine. Resolves to stdout (string).
 function execLocal(args) {
   return new Promise((resolve, reject) => {
-    execFile('nvidia-smi', args, { timeout: 8000, maxBuffer: 1 << 20 }, (err, stdout) => {
+    execFile('nvidia-smi', args, { timeout: 8000, maxBuffer: 1 << 20, windowsHide: true }, (err, stdout) => {
       if (err) return reject(err)
       resolve(stdout)
     })
@@ -33,7 +47,14 @@ function execLocal(args) {
 }
 
 // Fetch both queries locally. Returns { gpuCsv, procCsv }.
+//
+// Served from the long-lived loop children whenever they have a fresh sample.
+// The one-shot pair below is the fallback for the first tick and for a child
+// that has died and not yet respawned.
 async function fetchLocal() {
+  stream.ensure(gpuLoopArgs(), procLoopArgs())
+  const cached = stream.latest()
+  if (cached) return cached
   const [gpuCsv, procCsv] = await Promise.all([
     execLocal(gpuArgs()),
     execLocal(procArgs()),
@@ -50,6 +71,7 @@ const PROC_CMD = `nvidia-smi ${procArgs().join(' ')}`
 module.exports = {
   GPU_FIELDS, PROC_FIELDS,
   gpuArgs, procArgs,
+  gpuLoopArgs, procLoopArgs,
   execLocal, fetchLocal,
   GPU_CMD, PROC_CMD,
 }

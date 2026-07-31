@@ -16,6 +16,7 @@ const { startClaudeSwap } = require('./src/collectors/claude-swap')
 const { testConnect, execRemote } = require('./src/collectors/ssh')
 const { cswapCmd } = require('./src/collectors/cswap-cmd')
 const winPsHost = process.platform === 'win32' ? require('./src/collectors/win-ps-host') : null
+const nvidiaStream = require('./src/collectors/nvidia-stream')
 
 // cswap account-management: fixed argv arrays only, never shell-interpolated.
 // Same validation rules cswap itself enforces (see `cswap alias --help`).
@@ -762,4 +763,5 @@ app.on('before-quit', () => {
   if (claudeSwapHandle) claudeSwapHandle.stop()
   if (claudeOAuthHandle) claudeOAuthHandle.stop()
   if (winPsHost) winPsHost.stop()
+  nvidiaStream.stop()
 })

@@ -115,6 +115,16 @@ Toggling that checkbox is the only thing that ever writes a startup entry. Elect
 
 The window and tray icon come from `assets/images/app-icon.ico` on Windows and `assets/images/app-icon.png` elsewhere, because Electron does not read `.ico` on Linux. The PNG is the 256 pixel image unpacked from the same ICO.
 
+## GPU Sampling on the Local Host
+
+The local host previously called `execFile('nvidia-smi', ...)` twice per second, once for `--query-gpu` and once for `--query-compute-apps`. Every console child on Windows allocates a `conhost.exe`, so the steady state created four processes per second, roughly 240 a minute, all attributed to `guiTOP` — the same defect class as the PowerShell parade below, and considerably larger. The fix uses `nvidia-smi`'s own loop mode, `-l 1`, which repeats one query forever on a single process. Two long-lived children now serve every tick from `src/collectors/nvidia-stream.js`.
+
+Remote hosts are unaffected because they run the same fixed query strings over SSH and never spawned anything locally. The local implementation had to solve a framing problem because `-l` prints the CSV header once, not per iteration, leaving no delimiter between samples. Compute-app rows also vary in count, so lines cannot be counted to separate iterations. `timestamp` is a valid query field on both queries, and every row of one iteration carries the same value while two iterations never share one. The timestamp leads the field list, marks the boundary, and is stripped again, so what `parse.js` receives is byte-identical to the one-shot output.
+
+A group is published when a row with a new timestamp arrives, or after 400 ms of silence. An iteration with no compute processes emits no rows at all, which is indistinguishable from a stalled child. A proc sample older than 4 seconds is therefore reported as no processes rather than serving the last non-empty list forever. The one-shot pair remains the fallback for the first tick and for a child that has died and not yet respawned, with respawn occurring after 5 seconds.
+
+Unlike the PowerShell script, which polls for its parent and exits, `nvidia-smi` has no such check, so an orphan would query the driver every second forever. The streams are killed on process exit, and a hard kill leaves the child to notice its stdout pipe has closed on the next write. Measured on a 3-GPU Windows box, no new child process appeared in 75 seconds of running, against about 240 a minute before. The only spawns left are the 45 second `cswap` poll.
+
 ## Windows Process Telemetry
 
 Two collectors exist only because `nvidia-smi` on Windows cannot supply fields it supplies on Linux. Both sample independently of the 1 second GPU loop, both swallow their own errors and serve the last good reading, and both are looked up by pid from `service.js`.
