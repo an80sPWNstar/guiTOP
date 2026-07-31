@@ -75,6 +75,7 @@
   --radius: 10px;
   --radius-sm: 6px;
   --gap: 14px;
+  --status-bar-h: 26px;
 
   --shadow-card: 0 2px 12px rgba(0,0,0,0.4), 0 0 1px rgba(255,255,255,0.05) inset;
   --shadow-hover: 0 4px 24px rgba(0,0,0,0.5), 0 0 1px rgba(255,255,255,0.08) inset;
@@ -82,17 +83,25 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Viewport-filling column: tab bar, optional top strip, the scrolling panel,
+   optional bottom strip, status bar. The status bar is a flow item at the foot
+   of the column, never a fixed overlay, so page scroll can never slide content
+   (the Show Processes button, last in the panel) underneath it. Reserving
+   padding instead only clears the bar at maximum scroll. */
 body {
   font-family: 'Segoe UI', -apple-system, system-ui, sans-serif;
   background: var(--bg-app);
   color: var(--text-primary);
-  overflow-x: hidden;
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* ── Tab bar ─────────────────────────────────── */
 .tab-bar {
   display: flex;
+  flex-shrink: 0;
   align-items: stretch;
   background: rgba(255, 255, 255, 0.02);
   border-bottom: 1px solid var(--border-subtle);
@@ -129,9 +138,16 @@ body {
 .tab-panel {
   display: none;
   padding: var(--gap);
-  padding-bottom: 36px;
 }
-.tab-panel.active { display: block; }
+/* The panel is the only scroller. min-height: 0 lets it shrink below its
+   content — without it a flex item refuses to go under max-content height and
+   the column overflows the viewport again. */
+.tab-panel.active {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
 
 /* ── Host selector (Single tab) ──────────────── */
 .host-select {
@@ -634,11 +650,8 @@ body {
 
 /* ── Status bar ──────────────────────────────── */
 .status-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 26px;
+  flex-shrink: 0;
+  height: var(--status-bar-h);
   background: rgba(255, 255, 255, 0.02);
   border-top: 1px solid var(--border-subtle);
   display: flex;
@@ -647,7 +660,6 @@ body {
   font-size: 10px;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
-  z-index: 50;
 }
 
 /* ── Skin selector ───────────────────────────── */
@@ -909,21 +921,13 @@ body.skin-bars #panel-multi .gpu-grid {
   color: #ff8a1e; font-size: 12px; line-height: 1.5; opacity: 0.85; word-break: break-word;
 }
 
-/* ── Corvette skin — viewport-filling layout ─── */
-body.skin-corvette {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  min-height: 0;
-  overflow: hidden;
-}
-body.skin-corvette .tab-bar { flex-shrink: 0; }
-body.skin-corvette .status-bar { position: static; flex-shrink: 0; }
+/* ── Corvette skin — no-scroll layout ────────── */
+/* The body column, the flow status bar and the flexing panel are global now.
+   Corvette's own rule is that nothing scrolls at panel level: the panel is a
+   column whose grid takes the slack and scrolls internally instead. */
 body.skin-corvette .tab-panel.active {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 0;
   overflow: hidden;
   padding-bottom: 0;
 }
@@ -1088,16 +1092,10 @@ body.skin-corvette {
 
 /* The dock is the query container for the strip itself: an element cannot query
    its OWN container, so .cu-strip's gap/padding cqw units resolve here. */
-.cu-dock { display: none; container-type: inline-size; }
-.cu-dock-bottom {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 26px; /* sits on top of the fixed status bar */
-  z-index: 49;
-}
-body.skin-corvette .cu-dock-bottom { position: static; }
-body.skin-corvette .cu-dock { flex-shrink: 0; }
+/* Both docks are flow items in the body column — the bottom one lands directly
+   above the status bar without overlaying the panel, and it may wrap to two rows
+   at narrow widths without burying anything. */
+.cu-dock { display: none; container-type: inline-size; flex-shrink: 0; }
 
 .cu-strip {
   container-type: inline-size;
