@@ -1,7 +1,7 @@
-// Cookie-session Claude login & usage (main-process only).
+// Cookie-session Claude login (main-process only).
 // Opens a claude.ai/login popup, captures the sessionKey cookie via polling,
-// stores it encrypted (safeStorage), and fetches usage through a hidden
-// BrowserWindow (plain fetch() gets blocked by Cloudflare).
+// stores it encrypted (safeStorage), and discovers the organization id through
+// a hidden BrowserWindow (plain fetch() gets blocked by Cloudflare).
 // Minimal port from tempsLCD-web's claude-web.js for guiTOP's settings dialog.
 
 const fs = require('fs')
@@ -339,42 +339,6 @@ async function hiddenFetch(url) {
   }
 }
 
-// ---- usage fetch -----------------------------------------------------------
-
-function pct(v) {
-  return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : null
-}
-
-function parseDate(iso) {
-  const t = Date.parse(iso)
-  return Number.isFinite(t) ? t : null
-}
-
-async function fetchUsage() {
-  if (!getSessionKey()) throw new Error('NotLoggedIn')
-
-  const store = readStore() || {}
-  const orgId = store.organizationId || (await discoverOrgId())
-
-  const body = await hiddenFetch(
-    `https://claude.ai/api/organizations/${orgId}/usage`
-  )
-
-  const sessionResetsAt = parseDate(body?.five_hour?.resets_at)
-  const weekResetsAt = parseDate(body?.seven_day?.resets_at)
-  if (sessionResetsAt == null && weekResetsAt == null) {
-    throw new Error('SchemaMismatch')
-  }
-
-  return {
-    sessionPct: pct(body?.five_hour?.utilization),
-    sessionResetsAt,
-    weekPct: pct(body?.seven_day?.utilization),
-    weekResetsAt,
-    todayTokens: body?.today_tokens ?? null,
-  }
-}
-
 // saveSessionKey/getSessionKey are exported for test/claude-web.test.js — the
 // login flow they sit behind cannot be driven headlessly.
-module.exports = { login, logout, status, fetchUsage, saveSessionKey, getSessionKey }
+module.exports = { login, logout, status, saveSessionKey, getSessionKey }
