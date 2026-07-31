@@ -59,6 +59,16 @@ libfuse2, 138G free. Run the `guitop` binary directly — `AppRun` fails with `/
 or directory` because APPDIR is unset. `viz_main_impl` GPU-init errors under xvfb are benign; the
 app stays up, unlike under WSLg.
 
+Two traps in that rig, both hit on 2026-07-30:
+- **`scp` from WSL to .70 hangs forever.** The WSL home has no `~/.ssh` keys at all, so it falls
+  back to a password prompt that a non-interactive shell can never answer. Windows OpenSSH does
+  have key auth to that box (`~/.ssh/id_ed25519_familyllm`). Copy from Windows, not from WSL —
+  even though the AppImage is built in WSL. `-o BatchMode=yes` turns the hang into an immediate
+  `Permission denied` and is worth passing for that reason alone.
+- **`pgrep -f 'squashfs-root/guitop'` kills the ssh session running it**, because the remote
+  `bash -c` command line contains that string and so matches itself. Bracket the first character
+  — `pgrep -af '[s]quashfs-root/guitop'` — the same trick used for `ps | grep`.
+
 Verified there at commit `bb27d07`: all 3 Tesla P100s detected via nvidia-smi (only `fanSpeed`
 null, correct for P100), bars + gauges render, the CSS thermometer replaces the tofu box, and the
 gauge side-arcs are no longer buried. llama.cpp on that box was undisturbed throughout.
@@ -88,6 +98,12 @@ Verified in the real app on Windows at 3 skins x dock top/bottom/off x 520/1200/
 shown and hidden: status bar flush at the viewport bottom, zero overlaps from `/debug/strip`, the
 process table scrolling inside the panel. **This also closes the bottom-dock sweep** that had been
 open since the strip layout fix — the bottom dock renders correctly at every width tested.
+
+**Also verified on Linux**, against the shipped v0.3.4 AppImage on .70 under the xvfb rig: bars at
+520x680 with the strip docked bottom — the exact configuration that was broken — renders the strip
+directly above the status bar, both flush, all three P100s drawn, `/debug/strip` reporting zero
+overlaps. The strip reads `--` there because cswap is not installed on that box, which is correct
+behaviour rather than a fault. llama.cpp was serving throughout and its VRAM was unchanged after.
 
 **Historical note — WSL could not do this.** The v0.3.3 AppImage launches under WSLg, the main
 process runs, the dev server binds 17580 and `/gpu/backends` returns correct mock data — then
