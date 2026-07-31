@@ -156,6 +156,14 @@ function startStream(stream) {
   })
 
   const cleanup = () => {
+    // Close the interface first. 'exit' can arrive with lines still buffered in
+    // stdout, and those would land after pending was cleared -- a torn half
+    // iteration published as if it were a whole sample, which is the same
+    // defect the timestamp window exists to prevent.
+    if (stream.rl) {
+      stream.rl.close()
+      stream.rl = null
+    }
     stream.child = null
     stream.pending = []
     stream.stamp = null
