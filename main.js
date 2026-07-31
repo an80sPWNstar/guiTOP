@@ -14,6 +14,7 @@ const { startClaudeUsage } = require('./src/collectors/claude-usage')
 const { startClaudeUsageOAuth } = require('./src/collectors/claude-usage-oauth')
 const { startClaudeSwap } = require('./src/collectors/claude-swap')
 const { testConnect, execRemote } = require('./src/collectors/ssh')
+const { cswapCmd } = require('./src/collectors/cswap-cmd')
 
 // cswap account-management: fixed argv arrays only, never shell-interpolated.
 // Same validation rules cswap itself enforces (see `cswap alias --help`).
@@ -22,7 +23,8 @@ const CSWAP_ALIAS_RE = /^(?!\d+$)[a-zA-Z0-9._-]+$/
 const CSWAP_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function runCswapCmd(args, timeout, cb) {
-  execFile('cmd.exe', ['/c', 'cswap', ...args], { windowsHide: true, timeout, maxBuffer: 1024 * 1024 }, cb)
+  const { file, args: argv } = cswapCmd(args)
+  execFile(file, argv, { windowsHide: true, timeout, maxBuffer: 1024 * 1024 }, cb)
 }
 
 const isDev = process.argv.includes('--dev')
@@ -272,12 +274,13 @@ ipcMain.handle('cswap-add-token', (_e, { token, email, alias, slot } = {}) => ne
   if (alias && !CSWAP_ALIAS_RE.test(String(alias))) return resolve({ ok: false, error: 'invalid alias' })
   if (slot && !CSWAP_NUM_RE.test(String(slot))) return resolve({ ok: false, error: 'invalid slot' })
 
-  const args = ['/c', 'cswap', 'add-token', '-']
-  if (email) args.push('--email', String(email))
-  if (alias) args.push('--alias', String(alias))
-  if (slot) args.push('--slot', String(slot))
+  const cswapArgs = ['add-token', '-']
+  if (email) cswapArgs.push('--email', String(email))
+  if (alias) cswapArgs.push('--alias', String(alias))
+  if (slot) cswapArgs.push('--slot', String(slot))
 
-  const child = spawn('cmd.exe', args, { windowsHide: true })
+  const { file, args } = cswapCmd(cswapArgs)
+  const child = spawn(file, args, { windowsHide: true })
   let stderr = ''
   child.stderr.on('data', (d) => { stderr += d })
   child.on('error', (err) => resolve({ ok: false, error: err.message }))
