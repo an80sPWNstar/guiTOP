@@ -6,7 +6,7 @@
 // consecutive iterations never share one. Fixtures below are real lines from a
 // 3-GPU box (RTX 5070 Ti / 5060 Ti / 3090).
 
-const { createStream, splitStamped, flush, onLine } = require('../src/collectors/nvidia-stream')
+const { createStream, splitStamped, parseStamp, flush, onLine } = require('../src/collectors/nvidia-stream')
 const { parseGpus, parseProcesses } = require('../src/collectors/parse')
 
 let pass = 0, fail = 0
@@ -107,6 +107,47 @@ torn.stamp = null
 for (const line of stamped(T2, ONESHOT_GPU)) onLine(torn, line)
 flush(torn)
 eq('only the complete iteration is published', torn.csv, ONESHOT_GPU.join('\n'))
+
+console.log('an iteration is not uniformly stamped:')
+
+// The bug this guards. nvidia-smi re-stamps as it walks the devices, so a real
+// 22-row --query-compute-apps iteration came back as 21 rows at .298 plus one
+// at .302. Testing stamps for equality split it into a 21-row sample and a
+// 1-row sample, and the process table showed whichever landed last -- observed
+// live as a process count of 1 against nvidia-smi's own 22.
+eq('stamp parses to ms', parseStamp('2026/07/31 10:38:58.298'), Date.UTC(2026, 6, 31, 10, 38, 58, 298))
+eq('a stamp of another shape is null, not NaN', parseStamp('58.298'), null)
+eq('an empty stamp is null', parseStamp(''), null)
+// Crossing a minute must stay linear -- the reason this is parsed, not string-compared.
+eq('a later stamp is greater across a minute boundary',
+  parseStamp('2026/07/31 10:39:00.100') > parseStamp('2026/07/31 10:38:59.900'), true)
+
+const skewed = createStream('proc', [])
+const BULK = Array.from({ length: 21 }, (_, i) =>
+  `GPU-f678240a-8f09-056f-bebb-51a5d42a8e1c, ${1000 + i}, C:\\app${i}.exe, [N/A]`)
+const TRAILER = 'GPU-7d90cee9-2e3a-80d8-7d1b-e1c5d50eaf94, 17444, C:\\llama-server.exe, [N/A]'
+
+for (const line of stamped('2026/07/31 10:38:58.298', BULK)) onLine(skewed, line)
+onLine(skewed, `2026/07/31 10:38:58.302, ${TRAILER}`)
+
+eq('a 4ms-later row does not end the sample', skewed.csv, null)
+eq('it joins the same group', skewed.pending.length, 22)
+
+// The next iteration, a full second on, does end it.
+onLine(skewed, `2026/07/31 10:38:59.306, ${BULK[0]}`)
+eq('the whole 22-row iteration published as one sample', skewed.csv, BULK.concat(TRAILER).join('\n'))
+eq('all 22 rows parse', parseProcesses(skewed.csv, {}).length, 22)
+eq('the trailing row is the one nvidia-smi stamped late', parseProcesses(skewed.csv, {})[21].pid, 17444)
+
+// The window is measured from the start of the group, not the previous row, so a
+// long iteration cannot creep past the boundary one row at a time.
+const creep = createStream('proc', [])
+for (let i = 0; i < 8; i++) {
+  onLine(creep, `2026/07/31 10:38:58.${String(100 + i * 60).padStart(3, '0')}, ${BULK[i]}`)
+}
+eq('rows 60ms apart across 420ms stay one group', creep.pending.length, 8)
+onLine(creep, `2026/07/31 10:38:58.700, ${BULK[0]}`)
+eq('a row 600ms past the group start starts a new one', creep.pending.length, 1)
 
 console.log('blank lines are ignored:')
 

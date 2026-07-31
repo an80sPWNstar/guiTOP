@@ -32,6 +32,17 @@ const IDLE_FLUSH_MS = 400
 // processes" rather than serving a stale list forever.
 const STALE_MS = 4000
 
+// Rows of one iteration do NOT all carry the same timestamp. Measured on a
+// 3-GPU box, a 22-row --query-compute-apps iteration arrives as 21 rows at
+// .298 and the last row at .302: nvidia-smi re-stamps as it walks the devices.
+// Equality was therefore the wrong test -- it published a 21-row sample and
+// then a 1-row one, and the process table showed whichever landed last. Rows
+// belong to the same iteration while their timestamps are within this window,
+// which sits far above the few ms an iteration spans and far below the 1s
+// between them. Comparing the timestamps rather than our own read times is
+// what keeps a stalled event loop from splitting a sample.
+const SAME_SAMPLE_MS = 500
+
 // One stream = one long-lived nvidia-smi running one repeating query.
 // kind is 'gpu' or 'proc' (used only for bookkeeping).
 function createStream(kind, args) {
@@ -43,7 +54,8 @@ function createStream(kind, args) {
     child: null,
     rl: null,
     pending: [],    // rows of the group being accumulated
-    stamp: null,    // timestamp shared by the pending rows
+    stamp: null,    // timestamp of the most recent row
+    stampMs: null,  // first timestamp of the group, in ms, for the window test
     idleTimer: null,
     respawnTimer: null,
     stopped: false,
@@ -62,6 +74,18 @@ function splitStamped(line) {
   }
 }
 
+// "2026/07/31 10:38:58.298" -> ms. Not an ISO string, so it is parsed by hand
+// rather than trusting Date to guess. Only differences are ever taken, so the
+// zone this pretends to be in does not matter. Returns null if it does not
+// match, which leaves the idle flush as the only boundary.
+const STAMP_RE = /^(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d{3})$/
+
+function parseStamp(stamp) {
+  const m = STAMP_RE.exec(stamp)
+  if (!m) return null
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6], +m[7])
+}
+
 // Publish the accumulated group as one CSV text and start a fresh group.
 function flush(stream) {
   if (stream.pending.length === 0) {
@@ -75,6 +99,7 @@ function flush(stream) {
   stream.at = Date.now()
   stream.pending = []
   stream.stamp = null
+  stream.stampMs = null
   if (stream.idleTimer) {
     clearTimeout(stream.idleTimer)
     stream.idleTimer = null
@@ -96,10 +121,14 @@ function onLine(stream, line) {
   const parsed = splitStamped(line)
   if (!parsed) return
 
-  if (stream.stamp !== null && parsed.stamp !== stream.stamp) {
+  // A row far enough past the start of the group belongs to the next iteration.
+  const ms = parseStamp(parsed.stamp)
+  if (stream.pending.length > 0 && ms !== null && stream.stampMs !== null &&
+      ms - stream.stampMs >= SAME_SAMPLE_MS) {
     flush(stream)
   }
 
+  if (stream.pending.length === 0) stream.stampMs = ms
   stream.stamp = parsed.stamp
   stream.pending.push(parsed.rest)
   armIdleFlush(stream)
@@ -130,6 +159,7 @@ function startStream(stream) {
     stream.child = null
     stream.pending = []
     stream.stamp = null
+    stream.stampMs = null
     scheduleRespawn(stream)
   }
 
@@ -220,4 +250,4 @@ function stop() {
 // stdout pipe has closed on its next write.
 process.on('exit', stop)
 
-module.exports = { createStream, splitStamped, flush, armIdleFlush, onLine, startStream, scheduleRespawn, stopStream, ensure, latest, stop, RESPAWN_MS, IDLE_FLUSH_MS, STALE_MS }
+module.exports = { createStream, splitStamped, parseStamp, flush, armIdleFlush, onLine, startStream, scheduleRespawn, stopStream, ensure, latest, stop, RESPAWN_MS, IDLE_FLUSH_MS, STALE_MS, SAME_SAMPLE_MS }
