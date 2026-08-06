@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('guiTOP', {
   removeHost: (label) => ipcRenderer.invoke('remove-host', label),
   editHost: (label, config) => ipcRenderer.invoke('edit-host', label, config),
   cswapRefresh: () => ipcRenderer.invoke('cswap-refresh'),
+  cswapSwitch: (number) => ipcRenderer.invoke('cswap-switch', number),
   cswapSetAlias: (number, alias) => ipcRenderer.invoke('cswap-set-alias', number, alias),
   cswapSetEnabled: (number, enabled) => ipcRenderer.invoke('cswap-set-enabled', number, enabled),
   cswapRemoveAccount: (number) => ipcRenderer.invoke('cswap-remove-account', number),

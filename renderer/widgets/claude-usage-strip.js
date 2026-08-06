@@ -180,6 +180,11 @@ const ClaudeUsageStrip = (() => {
       const label = chip.querySelector('.cu-chip-label')
       label.textContent = (a.active ? '▸ ' : '') + a.number + ' ' + String(a.alias).toUpperCase()
 
+      chip.style.cursor = a.active ? '' : 'pointer'
+      chip.onclick = a.active ? null : () => {
+        if (window.guiTOP.cswapSwitch) window.guiTOP.cswapSwitch(a.number)
+      }
+
       if (a.active) {
         chip.style.border = `1px solid ${t.accent}88`
         chip.style.background = `${t.accent}14`

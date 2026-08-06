@@ -256,6 +256,15 @@ ipcMain.handle('cswap-refresh', () => {
   if (claudeSwapHandle) claudeSwapHandle.refresh()
 })
 
+ipcMain.handle('cswap-switch', (_e, number) => new Promise((resolve) => {
+  if (!CSWAP_NUM_RE.test(String(number))) return resolve({ ok: false, error: 'invalid account number' })
+  runCswapCmd(['switch', String(number)], 15000, (err, stdout, stderr) => {
+    if (err) return resolve({ ok: false, error: (stderr || err.message).trim() })
+    if (claudeSwapHandle) claudeSwapHandle.refresh()
+    resolve({ ok: true })
+  })
+}))
+
 ipcMain.handle('cswap-set-alias', (_e, number, alias) => new Promise((resolve) => {
   if (!CSWAP_NUM_RE.test(String(number))) return resolve({ ok: false, error: 'invalid account number' })
   if (!CSWAP_ALIAS_RE.test(String(alias))) return resolve({ ok: false, error: 'invalid alias' })
