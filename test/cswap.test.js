@@ -5,7 +5,7 @@
 // process NAME says nothing. Fixtures below are real command lines.
 
 const { cswapCmd } = require('../src/collectors/cswap-cmd')
-const { parsePsDate, isAutoCmdline, readAuto } = require('../src/collectors/claude-swap')
+const { parseSwap, parsePsDate, isoMs, isAutoCmdline, readAuto } = require('../src/collectors/claude-swap')
 
 let pass = 0, fail = 0
 function eq(label, got, want) {
@@ -79,6 +79,41 @@ eq('undateable start -> null age, not NaN', readAuto([{ CommandLine: UV_AUTO }],
 // A clock that moved backwards must not surface a negative uptime.
 eq('start in the future clamps to 0',
   readAuto([{ CommandLine: UV_AUTO, CreationDate: '/Date(' + (NOW + 60000) + ')/' }], NOW).autoSinceMin, 0)
+
+console.log('parseSwap usage + reset fields:')
+
+// A real-shaped cswap list: one healthy account, one the usage endpoint refused
+// (usage null, usageStatus 'unavailable') — the case the all-accounts view must
+// render as "no data" rather than 0%.
+const SWAP_JSON = JSON.stringify({
+  activeAccountNumber: 1,
+  accounts: [
+    {
+      number: 1, active: true, alias: 'cinchit', usageStatus: 'ok',
+      usage: {
+        fiveHour: { pct: 18, resetsAt: '2026-08-07T03:09:59+00:00' },
+        sevenDay: { pct: 59, resetsAt: '2026-08-07T01:59:59+00:00' },
+      },
+    },
+    { number: 2, active: false, alias: 'drcu', usageStatus: 'unavailable', usage: null },
+  ],
+})
+const parsed = parseSwap(SWAP_JSON)
+eq('active account number carried', parsed.activeNumber, 1)
+eq('healthy account keeps its pct', parsed.accounts[0].fiveHourPct, 18)
+eq('healthy account status ok', parsed.accounts[0].usageStatus, 'ok')
+eq('reset ISO becomes epoch ms', parsed.accounts[0].fiveHourResetMs, Date.parse('2026-08-07T03:09:59+00:00'))
+eq('seven-day reset ms too', parsed.accounts[0].sevenDayResetMs, Date.parse('2026-08-07T01:59:59+00:00'))
+eq('unavailable account pct is null', parsed.accounts[1].fiveHourPct, null)
+eq('unavailable status surfaced', parsed.accounts[1].usageStatus, 'unavailable')
+eq('null usage -> null reset ms', parsed.accounts[1].fiveHourResetMs, null)
+// A payload with no usageStatus field at all: derive it from whether usage exists.
+const derived = parseSwap(JSON.stringify({ accounts: [{ number: 3, usage: null }] }))
+eq('missing usageStatus derived from null usage', derived.accounts[0].usageStatus, 'unavailable')
+
+eq('isoMs parses ISO', isoMs('2026-08-07T03:09:59+00:00'), Date.parse('2026-08-07T03:09:59+00:00'))
+eq('isoMs garbage is null', isoMs('nope'), null)
+eq('isoMs non-string is null', isoMs(1769000000000), null)
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

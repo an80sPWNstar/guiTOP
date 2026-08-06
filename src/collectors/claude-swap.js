@@ -84,9 +84,20 @@ function detectAuto(cb) {
 }
 
 function clampPct(v) {
+  // Guard null/undefined/'' explicitly: Number(null) and Number('') are both 0,
+  // which is finite, so a missing usage value would otherwise read as a real 0%.
+  if (v == null || v === '') return null
   const n = Number(v)
   if (!Number.isFinite(n)) return null
   return Math.max(0, Math.min(100, n))
+}
+
+// cswap emits resetsAt as an ISO 8601 string; the strip wants absolute epoch ms
+// so it can tick a live countdown between polls. Non-strings / bad dates -> null.
+function isoMs(v) {
+  if (typeof v !== 'string') return null
+  const ms = Date.parse(v)
+  return Number.isFinite(ms) ? ms : null
 }
 
 function accountAlias(a) {
@@ -102,8 +113,15 @@ function parseSwap(stdout) {
       alias: accountAlias(a),
       active: !!a.active,
       disabled: !!a.disabled,
+      // cswap reports 'ok' only when it actually fetched usage; anything else
+      // (e.g. 'unavailable' after a 403/429 on the usage endpoint) leaves the
+      // pcts null. Carry it through so the strip can show "no data" rather than
+      // an empty bar that reads as 0%.
+      usageStatus: String(a.usageStatus || (a.usage ? 'ok' : 'unavailable')),
       fiveHourPct: clampPct(a.usage && a.usage.fiveHour && a.usage.fiveHour.pct),
       sevenDayPct: clampPct(a.usage && a.usage.sevenDay && a.usage.sevenDay.pct),
+      fiveHourResetMs: isoMs(a.usage && a.usage.fiveHour && a.usage.fiveHour.resetsAt),
+      sevenDayResetMs: isoMs(a.usage && a.usage.sevenDay && a.usage.sevenDay.resetsAt),
     })),
   }
 }
@@ -124,9 +142,9 @@ function startClaudeSwap(onData) {
         autoOn: true,
         autoSinceMin: 23,
         accounts: [
-          { number: 1, alias: 'bryan', active: true, disabled: false, fiveHourPct: 62, sevenDayPct: 41 },
-          { number: 2, alias: 'dev', active: false, disabled: false, fiveHourPct: 97, sevenDayPct: 83 },
-          { number: 3, alias: 'apikey', active: false, disabled: true, fiveHourPct: null, sevenDayPct: null },
+          { number: 1, alias: 'bryan', active: true, disabled: false, usageStatus: 'ok', fiveHourPct: 62, sevenDayPct: 41 },
+          { number: 2, alias: 'dev', active: false, disabled: false, usageStatus: 'ok', fiveHourPct: 97, sevenDayPct: 83 },
+          { number: 3, alias: 'apikey', active: false, disabled: true, usageStatus: 'unavailable', fiveHourPct: null, sevenDayPct: null },
         ],
       })
       running = false
@@ -173,4 +191,4 @@ function startClaudeSwap(onData) {
   }
 }
 
-module.exports = { startClaudeSwap, parseSwap, parsePsDate, isAutoCmdline, readAuto, detectAuto }
+module.exports = { startClaudeSwap, parseSwap, parsePsDate, isoMs, isAutoCmdline, readAuto, detectAuto }

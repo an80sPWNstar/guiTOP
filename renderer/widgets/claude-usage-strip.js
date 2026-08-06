@@ -16,7 +16,19 @@ const ClaudeUsageStrip = (() => {
   }
 
   function render() {
-    return `<div class="cu-strip"><div class="cu-brand"><span class="cu-brand-name">CLAUDE</span><span class="cu-brand-sub">USAGE</span></div>${meterHtml('Session', 'session', 'reset')}${meterHtml('Week', 'week', 'week-reset')}<div class="cu-readout" data-role="fable-readout" style="display:none"><span class="cu-label" data-role="fable-label">Fable</span><span class="cu-val" data-role="fable-val">--</span><span class="cu-unit">%</span><span class="cu-val" data-role="fable-reset">--</span></div><div class="cu-readout" data-role="tokens-readout"><span class="cu-label">Tokens Today</span><span class="cu-val" data-role="tokens">--</span></div><div class="cu-swap"><div class="cu-div" data-role="swap-div"></div><div class="cu-accts" data-role="accts"></div><div class="cu-auto" data-role="auto"><span class="cu-dot" data-role="auto-dot"></span><span class="cu-label">Auto</span><span class="cu-val" data-role="auto-val">--</span></div></div></div>`
+    return `<div class="cu-strip"><div class="cu-brand"><span class="cu-brand-name">CLAUDE</span><span class="cu-brand-sub">USAGE</span></div>${meterHtml('Session', 'session', 'reset')}${meterHtml('Week', 'week', 'week-reset')}<div class="cu-readout" data-role="fable-readout" style="display:none"><span class="cu-label" data-role="fable-label">Fable</span><span class="cu-val" data-role="fable-val">--</span><span class="cu-unit">%</span><span class="cu-val" data-role="fable-reset">--</span></div><div class="cu-readout" data-role="tokens-readout"><span class="cu-label">Tokens Today</span><span class="cu-val" data-role="tokens">--</span></div><div class="cu-swap"><div class="cu-div" data-role="swap-div"></div><div class="cu-accts" data-role="accts"></div><div class="cu-auto" data-role="auto"><span class="cu-dot" data-role="auto-dot"></span><span class="cu-label">Auto</span><span class="cu-val" data-role="auto-val">--</span></div></div><div class="cu-all" data-role="all-meters" style="display:none"></div></div>`
+  }
+
+  // One 5H/7D meter pair per account, built per row so data-roles don't collide
+  // across rows (they're scoped by querying inside the row element).
+  function acctRowHtml() {
+    const segs = '<div class="cu-seg"></div>'.repeat(SEG_COUNT)
+    const meter = (label, role) =>
+      `<div class="cu-meter cu-meter--acct"><span class="cu-label">${label}</span>` +
+      `<div class="cu-track" data-role="${role}">${segs}</div>` +
+      `<span class="cu-val" data-role="${role}-val">--</span><span class="cu-unit">%</span>` +
+      `<span class="cu-readout cu-readout-inline"><span class="cu-val" data-role="${role}-reset">--</span></span></div>`
+    return `<div class="cu-acct-row"><span class="cu-acct-name"></span>${meter('Session', 's5')}${meter('Week', 's7')}</div>`
   }
 
   function paintBar(track, pct, theme) {
@@ -71,12 +83,33 @@ const ClaudeUsageStrip = (() => {
     return String(n)
   }
 
-  function update(root, data, skin, swap) {
+  function update(root, data, skin, swap, showAll) {
     const t = theme(skin)
 
     const brandName = root.querySelector('.cu-brand-name')
     brandName.style.color = t.accent
     brandName.style.textShadow = `0 0 8px ${t.accent}55`
+
+    // "All accounts" mode: stack a full 5H/7D meter pair per account (from the
+    // cswap swap payload), instead of the single active-account meters. The
+    // whole single view — meters, fable, tokens, chips — is sourced separately
+    // and simply hidden; the strip flips to a vertical column via a class.
+    const stripEl = root.querySelector('.cu-strip')
+    const allEl = root.querySelector('[data-role="all-meters"]')
+    const allMode = !!showAll && swap && swap.ok && Array.isArray(swap.accounts) && swap.accounts.length > 0
+    stripEl.classList.toggle('cu-strip--all', allMode)
+    if (allMode) {
+      root.querySelectorAll('.cu-meter:not(.cu-meter--acct)').forEach(m => { m.style.display = 'none' })
+      root.querySelector('[data-role="fable-readout"]').style.display = 'none'
+      root.querySelector('[data-role="tokens-readout"]').style.display = 'none'
+      root.querySelector('.cu-swap').style.display = 'none'
+      allEl.style.display = 'flex'
+      renderAllMeters(allEl, swap, t)
+      return
+    }
+    allEl.style.display = 'none'
+    root.querySelectorAll('.cu-meter:not(.cu-meter--acct)').forEach(m => { m.style.display = '' })
+    root.querySelector('.cu-swap').style.display = ''
 
     const sessionVal = root.querySelector('[data-role="session-val"]')
     const weekVal = root.querySelector('[data-role="week-val"]')
@@ -151,6 +184,52 @@ const ClaudeUsageStrip = (() => {
     updateSwap(root, swap, t)
   }
 
+  function renderAllMeters(allEl, swap, t) {
+    const accounts = swap.accounts
+    const sig = accounts.map(a => a.number + ':' + a.alias + ':' + (a.active ? 1 : 0)).join('|')
+    if (allEl.dataset.sig !== sig) {
+      allEl.dataset.sig = sig
+      allEl.innerHTML = accounts.map(() => acctRowHtml()).join('')
+    }
+    const rows = allEl.children
+    for (let i = 0; i < accounts.length; i++) {
+      const a = accounts[i]
+      const row = rows[i]
+      const name = row.querySelector('.cu-acct-name')
+      name.textContent = (a.active ? '▸ ' : '') + a.number + ' ' + String(a.alias).toUpperCase()
+      name.style.color = a.active ? t.accent : ''
+
+      // usageStatus !== 'ok' means cswap could not fetch it; pcts are null and
+      // the bar reads empty, so dim the whole row to say "no data", not "0%".
+      const na = a.usageStatus ? a.usageStatus !== 'ok' : false
+      row.classList.toggle('cu-acct-row--na', na)
+
+      paintAcctMeter(row, 's5', a.fiveHourPct, a.fiveHourResetMs, t)
+      paintAcctMeter(row, 's7', a.sevenDayPct, a.sevenDayResetMs, t)
+    }
+  }
+
+  function paintAcctMeter(row, role, pct, resetMs, t) {
+    const track = row.querySelector(`[data-role="${role}"]`)
+    const val = row.querySelector(`[data-role="${role}-val"]`)
+    const reset = row.querySelector(`[data-role="${role}-reset"]`)
+    if (pct == null) {
+      paintBar(track, 0, t)
+      val.textContent = '--'
+      val.style.color = ''
+      val.style.textShadow = 'none'
+    } else {
+      paintBar(track, pct, t)
+      const c = valColor(pct, t)
+      val.textContent = pct
+      val.style.color = c
+      val.style.textShadow = `0 0 6px ${c}66`
+    }
+    reset.textContent = fmtReset(resetMs)
+    reset.style.color = t.val
+    reset.style.textShadow = `0 0 6px ${t.val}55`
+  }
+
   function updateSwap(root, swap, t) {
     const swapDiv = root.querySelector('[data-role="swap-div"]')
     const acctsEl = root.querySelector('[data-role="accts"]')
@@ -195,6 +274,13 @@ const ClaudeUsageStrip = (() => {
         label.style.color = ''
       }
       chip.style.opacity = a.disabled ? '0.4' : ''
+
+      // cswap could not fetch this account's usage (e.g. a token that 403s on
+      // the usage endpoint). A null pct would otherwise paint an empty bar that
+      // reads as 0%; mark it so the mini bars show a distinct "no data" state.
+      const na = a.usageStatus ? a.usageStatus !== 'ok' : false
+      chip.classList.toggle('cu-chip--na', na)
+      chip.title = na ? 'usage unavailable' : ''
 
       const mini5 = chip.querySelector('[data-role="mini5"]')
       const mini7 = chip.querySelector('[data-role="mini7"]')

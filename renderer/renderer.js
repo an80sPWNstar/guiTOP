@@ -14,6 +14,7 @@ const state = {
   claudeDock: localStorage.getItem('guitop-claude-dock') || 'top',  // top | bottom | off
   claudeUsage: null,
   claudeSwap: null,
+  showAllAccounts: false,  // seeded from settings.json on startup (see below)
 }
 
 function applySkinClass() {
@@ -80,7 +81,7 @@ function renderClaudeStrip() {
   const target = dock === 'top' ? claudeTopEl : dock === 'bottom' ? claudeBottomEl : null
   if (!target) return
   if (!target.querySelector('.cu-strip')) target.innerHTML = ClaudeUsageStrip.render()
-  ClaudeUsageStrip.update(target, state.claudeUsage, state.skin, state.claudeSwap)
+  ClaudeUsageStrip.update(target, state.claudeUsage, state.skin, state.claudeSwap, state.showAllAccounts)
 }
 
 // ── Claude account management (native cswap: alias/enable/disable/remove/add) ──
@@ -174,6 +175,7 @@ const launchStartup = document.getElementById('setting-launch-startup')
 const minimizeTray = document.getElementById('setting-minimize-tray')
 const cswapRadio = document.getElementById('setting-claude-cswap')
 const oauthRadio = document.getElementById('setting-claude-oauth')
+const showAllCheckbox = document.getElementById('setting-show-all')
 const oauthStatus = document.getElementById('claude-oauth-status')
 const claudeFeedback = document.getElementById('setting-claude-feedback')
 const claudeWebStatus = document.getElementById('claude-web-status')
@@ -194,6 +196,7 @@ async function loadSettingsUI() {
   const s = await window.guiTOP.getSettings()
   launchStartup.checked = !!s.launchAtStartup
   minimizeTray.checked = !!s.minimizeToTray
+  showAllCheckbox.checked = !!s.showAllAccounts
   if (s.useOAuthClaude) {
     oauthRadio.checked = true
   } else {
@@ -252,6 +255,12 @@ launchStartup.addEventListener('change', async () => {
 
 minimizeTray.addEventListener('change', async () => {
   await window.guiTOP.setSetting('minimizeToTray', minimizeTray.checked)
+})
+
+showAllCheckbox.addEventListener('change', async () => {
+  state.showAllAccounts = showAllCheckbox.checked
+  await window.guiTOP.setSetting('showAllAccounts', showAllCheckbox.checked)
+  renderClaudeStrip()
 })
 
 cswapRadio.addEventListener('change', async () => {
@@ -341,6 +350,14 @@ window.guiTOP.onClaudeSwap((payload) => {
 })
 
 renderClaudeStrip()
+
+// Seed the all-accounts view from settings.json (the modal's loadSettingsUI only
+// runs when Settings is opened). Resolves well before the first swap poll, so
+// there is no flash of the wrong view.
+window.guiTOP.getSettings().then((s) => {
+  state.showAllAccounts = !!(s && s.showAllAccounts)
+  renderClaudeStrip()
+}).catch(() => {})
 
 // Reset countdowns are absolute timestamps from the collector (45s poll);
 // repaint on a faster independent tick so they count down live in between.

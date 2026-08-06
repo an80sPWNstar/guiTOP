@@ -1229,6 +1229,33 @@ body.skin-corvette {
   background: rgba(255, 255, 255, 0.08);
 }
 .cu-mini-fill { height: 100%; width: 0; border-radius: 2px; }
+/* Usage unavailable (cswap could not fetch it): a faint diagonal hatch so the
+   track reads as "no data" rather than an empty 0% bar. */
+.cu-chip--na .cu-mini {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.14) 0, rgba(255, 255, 255, 0.14) 2px,
+    transparent 2px, transparent 4px
+  );
+}
+.cu-chip--na .cu-chip-label { opacity: 0.55; }
+
+/* "All accounts" mode: the strip becomes a vertical stack — brand line on top,
+   one 5H/7D meter-pair row per account below. */
+.cu-strip--all { flex-direction: column; align-items: flex-start; gap: 5px; }
+.cu-all { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+.cu-acct-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.cu-acct-row--na { opacity: 0.55; }
+.cu-acct-name {
+  min-width: 96px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--cu-dim);
+}
+.cu-meter--acct { flex: 0 0 auto; }
 .cu-auto { display: flex; align-items: center; gap: 6px; }
 /* Narrow enough and the word AUTO is what pushes its own value past the right
    edge. The lit dot already says which state this is, so the word goes first. */
