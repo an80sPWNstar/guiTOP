@@ -1,8 +1,96 @@
 # guiTOP — Session Handoff
 
-_Last updated: 2026-07-27. Read this + `CLAUDE.md` once at session start._
+_Last updated: 2026-07-31 (second session that day). Read this + `CLAUDE.md` once at session start._
 
-## RESUME HERE
+## RESUME HERE — 2026-07-31 (session 2)
+
+**DO NOT PUSH ANYTHING.** Bryan's explicit instruction at the close of this session: nothing
+goes to GitHub on this repo or any other, and the CLAUDE.md edits below are not to be committed.
+`main` is **ahead 6 unpushed** (`47b8eaa` from the prior session plus the five below), with
+`CLAUDE.md` and `status.md` modified and `guiHTOP-framework-plan.md` untracked. Leave it that way
+until he says otherwise.
+
+**What this session was about.** Bryan reported that Task Manager still showed `guiTOP.exe (264)`
+after the previous session's PowerShell fix. It did, and the previous diagnosis was only a third
+of the story: the PowerShell parade was ~70/min out of ~310/min. The rest was `nvidia-smi` itself.
+
+`fetchLocal()` ran `execFile('nvidia-smi', ...)` **twice per 1s tick** (one `--query-gpu`, one
+`--query-compute-apps`). On Windows each console child also allocates a `conhost.exe`, so steady
+state was **4 process creations per second, ~240/min**. Fixed with `nvidia-smi -l 1` loop mode —
+one long-lived child per query — in new `src/collectors/nvidia-stream.js`. Measured after: **0 new
+children in 100s** on the installed build, against ~240/min before. The only spawns left are the
+45s cswap poll (cmd + conhost + cswap + 2 python ≈ 5 per poll), left deliberately.
+
+**Shipped and installed: v0.3.7.** Steady state is 2 `nvidia-smi` + 1 PowerShell for the app's
+life. 9/9 suites. Startup registry entry verified pointing at the installed path
+(`electron.app.guiTOP` → `...\Programs\guitop\guiTOP.exe`); the stray dev-path entry is gone, so
+no re-tick was needed this time.
+
+**A bug shipped in 0.3.6 and was fixed in 0.3.7 — read this before touching the framing.**
+`-l` prints the CSV header **once**, not per iteration, so there is no delimiter between samples,
+and compute-app rows vary in count so lines cannot be counted. `timestamp` is a valid field on
+both queries and was used as the boundary marker — but **rows of one iteration are NOT uniformly
+stamped.** `nvidia-smi` re-stamps as it walks the devices: a real 22-row iteration arrives as 21
+rows at `.298` and the last row at `.302`. Testing stamps for **equality** split that into a
+21-row sample and a 1-row sample, and the process table showed whichever landed last. Now grouped
+by a **500 ms window** on the parsed stamps (spread is ~3 ms, gap between iterations is 1000 ms),
+comparing the stamps themselves rather than our read times, so a stalled event loop cannot split a
+sample either.
+
+**How that bug got past verification, so it does not happen again:** the "all rows share a
+timestamp" claim was checked against a 3-row `--query-gpu` output and the **first three rows** of
+`--query-compute-apps`. `/gpu/backends` reported "no nulls" and looked perfectly healthy
+throughout. It was caught only by comparing the app's `processCount` against `nvidia-smi`'s own
+row count — app 21 (and once 1) vs tool 22. **A shape check does not catch a count that is
+quietly short. Sample a full period, and compare counts against the source tool.**
+
+**Commits on `main`, all local:**
+- `600cc8b` perf: the `-l 1` loop-mode rework
+- `3bb1889` chore: v0.3.6
+- `1d097cd` fix: the timestamp-window framing fix
+- `171fbf8` chore: v0.3.7
+- `15b94d2` harden: close the readline interface in `cleanup()`, so a child that exits with rows
+  still buffered in stdout cannot publish a torn half-sample
+- plus `47b8eaa` (v0.3.5 PowerShell host) still unpushed from the previous session
+
+**Closed out: v0.3.8 is what is installed and running**, built after `15b94d2` so the hardening is
+in the shipped build (0.3.7 did not have it). Verified: 2 long-lived `nvidia-smi` children, and the
+app's `processCount` equal to `nvidia-smi`'s own row count (23 and 23).
+
+**Uncommitted:** the `package.json` bump to **0.3.8** (deliberately left uncommitted at Bryan's
+"don't commit" instruction — `package-lock.json` still says 0.3.7, so reconcile both when this is
+eventually committed), `CLAUDE.md` (a `## Local LLM Delegation` block appended — see below),
+`status.md` itself, and the untracked `guiHTOP-framework-plan.md` that has been sitting there for
+days.
+
+**Tests:** `test/nvidia-stream.test.js`, 38 assertions, framing only. The singleton spawns real
+children, so `latest()` staleness is verified live rather than unit-tested. The regression test
+pins the real observed shape: a 22-row iteration whose last row is stamped 4 ms later must stay
+one sample.
+
+**Outside this repo, same session:**
+- **The SessionStart local-LLM probe hook had a real bug.** llama.cpp binds its port immediately
+  but answers **HTTP 503 until the model is resident** (minutes for a 27B Q8_0), and
+  `Invoke-RestMethod -ErrorAction Stop` throws on a 503 exactly as on connection-refused — so the
+  hook's single `catch` reported a loading box as DOWN. `.100` was declared down 26 seconds into a
+  model load, and the hold-for-the-session rule wasted it for hours. `~/.claude/hooks/probe-local-llm.ps1`
+  now classifies UP / LOADING / BUSY / DOWN. Discriminator, verified under PowerShell 5.1: a 503
+  throws `WebException` **with** `$_.Exception.Response`; a refused port throws with **no**
+  Response object. All four branches tested against a local stand-in server.
+- **The local-LLM delegation rules are now restated in all ten project `CLAUDE.md` files**, behind
+  `<!-- BEGIN/END LOCAL-LLM-DELEGATION v1 -->` markers, because a project CLAUDE.md overrides the
+  global one. Re-sync by replacing between the markers; do not hand-edit the copies. **None of
+  those ten files is committed.**
+
+**Still open, unchanged by this session:** `amd-smi` remains the only unvalidated parser;
+`real-hardware.test.js` still pins sysfs fan at 31 pending a `pwm1` capture from Apollo; the
+hardcoded date-stamped `anthropic-beta` header in `claude-usage-oauth.js`; the Linux `add-token`
+stdin path has never executed anywhere; at 520px the bars skin's `⚡` is still an emoji dependency.
+
+## Earlier handoff — v0.3.3 era (historical, superseded by the section above)
+
+**Note:** this section was already stale before this session — it describes v0.3.3 as current,
+while v0.3.4, v0.3.5, v0.3.6 and v0.3.7 have since shipped. Kept for the AMD/Apollo detail.
 
 **v0.3.3 is committed and pushed to `main`.** Tests 8/8, 229 assertions. Three commits:
 `b3d05ae` the AMD pwm1 fan fix, `42ce06d` the app work (AUTO chip, icon, window state,

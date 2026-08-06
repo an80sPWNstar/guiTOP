@@ -284,3 +284,56 @@ and the overlay behaviour returns.
 - Validate all external input. HTML-escape all renderer data.
 - Credentials: prefer SSH keys. Passwords via Electron safeStorage, never plaintext.
 - Clean, minimal, human-readable. Short focused files. Match surrounding style.
+
+<!-- BEGIN LOCAL-LLM-DELEGATION v1 -- canonical block, identical in every project. Source of truth: ~/.claude/CLAUDE.md. Re-sync by replacing between these two markers. -->
+## Local LLM Delegation
+
+A project `CLAUDE.md` overrides the global one, so the operative rules are restated here rather
+than left to be inherited. Full detail, measurements and history live in `~/.claude/CLAUDE.md`.
+
+**Cost order, cheapest first: local Qwen boxes `.70` + `.100` (BOTH FREE) > Haiku > Opus.**
+Latency does not matter — a slow free path beats a fast paid one. Delegate by default; keep on
+Opus only final go/no-go gates, orchestration decisions, and ambiguous design calls. **Report
+every delegation:** which box, what was sent, rough tokens in/out. State explicitly when a task
+used no local LLM at all.
+
+- `.100` = `http://192.168.50.100:8080` (1 slot, ~42 tok/s, **primary**). `.70` =
+  `http://192.168.50.70:8080` (2 slots, ~10-17 tok/s). 3 slots total; batch 4+ tasks in threes.
+  Call with curl or node `fetch` — these are not pluggable into the Agent tool.
+- **Always send `"chat_template_kwargs": {"enable_thinking": false}`** or the reply comes back
+  empty (Qwen spends the whole `max_tokens` budget on `reasoning_content`).
+- **The SessionStart probe reports four states: UP / LOADING / BUSY / DOWN.** Hold its result for
+  the session; do not re-probe before each call. But:
+  - **LOADING is not down.** llama.cpp binds its port immediately and answers **HTTP 503 until the
+    model is resident** — minutes, for a 27B Q8_0. A box shown LOADING or DOWN gets **one**
+    re-probe before the first real delegation. Never write off a box for a whole session on the
+    strength of one probe line.
+  - **`0/N slots idle` = BUSY**, not down: the call queues, and it is still free.
+  - **Bryan asking why a box is unused IS a re-probe trigger.** Re-probe, then answer — do not
+    explain the held result back to him.
+- **DRY splits by literal density, not code-vs-prose.** Anything that must reproduce identifiers
+  verbatim (codegen, diff and code review, error/log analysis): **no** `dry_multiplier`, **no**
+  `repeat_penalty`, `temperature: 0`. Free-form prose with no repeated literals: `"dry_multiplier":
+  0.8`. DRY corrupts repeated tokens — renamed identifiers, dropped tokens, mangled file paths.
+- **CODEGEN = skeleton only.** Send the target file with real imports, signatures and comments and
+  `// TODO:` bodies: *"fill only the TODO bodies, change nothing else, return the complete file."*
+  Free-form "write this module" fails (restarts mid-file, duplicate imports). Prepend a
+  ~100-token house-rules block for repo style — the model cannot know local lint/naming rules.
+- **REVIEWS:** `max_tokens` 8192+, inputs <=3k (one sliced file or a plan — never a whole diff;
+  value drops sharply as input grows). Force a line format, and **include one worked example line
+  with REAL content**: a format made of bare field names gets echoed literally, e.g.
+  `1. 138 -- problem -- fix -- confidence(high)`. **Never name a finding count**, not even
+  "up to N, stop when out, never pad" — the number is the anchor and the model pads to it. Cap on
+  my side, after the response.
+- **Local review is a candidate generator, never a verdict** (~40% precision, sometimes 0 of 12).
+  Verify every finding against the source before acting. **The same prompt on both boxes is not a
+  second opinion** — same model and quant produce near-identical lists; vary the *lens* instead
+  (correctness / boundary conditions / "what did the author verify on only one machine").
+- **Vision** is reliable for transcription (read a table, a count, a value) and unreliable for
+  judgement (it called by-design text truncation an overlap). Take and read screenshots myself
+  regardless; never accept a model's description of an image as the finding.
+- **Failure protocol:** if a result looks wrong, fix **my** prompt or params and retry first —
+  every "the model can't do it" so far has turned out to be my setup. If it still fails, STOP and
+  report exactly what was tried. Quietly doing the work myself instead is not an acceptable
+  outcome. Same for transport errors: diagnose, retry once, then report.
+<!-- END LOCAL-LLM-DELEGATION v1 -->
