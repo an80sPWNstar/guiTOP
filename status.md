@@ -1,8 +1,36 @@
 # guiTOP — Session Handoff
 
-_Last updated: 2026-07-31 (second session that day). Read this + `CLAUDE.md` once at session start._
+_Last updated: 2026-08-06 (evening session). Read this + `CLAUDE.md` once at session start._
 
-## RESUME HERE — 2026-07-31 (session 2)
+## RESUME HERE — 2026-08-06 (evening, v0.3.10)
+
+**Claude strip redesigned to per-account rows only.** Bryan iterated in four steps: (1) the
+all-accounts stack had invisible bars — `.cu-meter--acct` was `flex: 0 0 auto`, so the meter sat
+at min-content and the empty segs got zero width; (2) he wanted both views at once, so the
+Settings toggle `showAllAccounts` and all its plumbing were removed; (3) then he wanted ONLY the
+account rows — the single-account view, the chips and the Tokens-Today readout are deleted
+outright. The strip is now brand | one meter-pair row per account | AUTO. The account NAME is the
+cswap switch control (click inactive name). FABLE rides the active account's row; (4) fable
+became a full segmented meter, re-hued blue per skin (`fableSeg`/`fableGlow` in THEME — same
+saturation/lightness as each skin's seg color).
+
+**Also fixed, pre-existing:** `.cu-track { min-width: 36px }` was below the track's own fixed
+cost (19 gaps × 2px + 6px padding = 44px), so a fully squeezed bar rendered zero-width segs and
+read as an unlit black bar. Floor is now 64px, and gap drops to 1px under a 560px container.
+Verified 1400/900/480px via `/resize` + `/debug/strip` + screenshots: 0 overlaps, 0 overflows,
+all bars lit at every width.
+
+**Fallback kept:** no swap payload → the usage payload still renders as one unnamed active row.
+Single account → no change vs before (one row). `main.js` debug endpoints only query `.cu-strip`
+generically, so the DOM restructure is safe.
+
+**v0.3.10 committed and pushed this session; Windows .exe built.** The v0.3.9 RELEASE IS STILL
+HELD — Linux build + tag + GitHub release blocked until BIOS SVM is re-enabled (Threadripper
+firmware reset turned WSL off, see session 08-06 memory). When SVM is back: build Linux for
+0.3.10, tag, release with all three installers — 0.3.9 never got its own release, fold it in.
+
+## Historical — 2026-07-31 (session 2; the DO-NOT-PUSH instruction below was superseded — 08-05
+and 08-06 sessions pushed v0.3.5–0.3.9 with Bryan's approval)
 
 **DO NOT PUSH ANYTHING.** Bryan's explicit instruction at the close of this session: nothing
 goes to GitHub on this repo or any other, and the CLAUDE.md edits below are not to be committed.

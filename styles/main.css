@@ -1151,7 +1151,10 @@ body.skin-corvette {
 }
 .cu-track {
   flex: 1 1 auto;
-  min-width: 36px; /* bar stays legible; it shrinks before any text does */
+  /* Floor must clear the track's own fixed cost — 19 seg gaps + padding is
+     44px at gap 2px — or the segs themselves get zero width and a squeezed
+     bar reads as unlit black. 64px leaves every seg ~1px + glow. */
+  min-width: 64px;
   display: flex;
   gap: 2px;
   height: 11px;
@@ -1185,65 +1188,11 @@ body.skin-corvette {
 }
 .cu-arrow { font-size: 16px; line-height: 0; vertical-align: -2px; }
 
-/* ── Claude swap — account chips + auto status ── */
-/* Divider + account chips + AUTO travel together. Left loose they wrap one at a
-   time, and a second row holding nothing but AUTO reads as a layout bug rather
-   than as a strip that ran out of width. */
-.cu-swap {
-  display: flex;
-  align-items: center;
-  gap: clamp(8px, 2cqw, 14px);
-  /* Deliberately shrinkable: a flex item that cannot shrink is laid out at its
-     max-content width, so an inner flex-wrap never triggers and the cluster
-     overflows the strip instead of wrapping. Shrinking is safe here because the
-     chips and the AUTO block inside keep their own flex-shrink: 0. */
-  flex-wrap: wrap;
-}
-.cu-div { width: 1px; align-self: stretch; background: var(--cu-border); }
-.cu-accts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.cu-chip {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 3px 9px;
-  border-radius: var(--cu-radius);
-  border: 1px solid var(--cu-border);
-  background: rgba(255, 255, 255, 0.03);
-}
-.cu-chip { flex-shrink: 0; }
-.cu-chip-label {
-  white-space: nowrap;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--cu-dim);
-}
-.cu-chip-bars { display: flex; flex-direction: column; gap: 2px; }
-.cu-mini {
-  width: 34px;
-  height: 4px;
-  border-radius: 2px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.08);
-}
-.cu-mini-fill { height: 100%; width: 0; border-radius: 2px; }
-/* Usage unavailable (cswap could not fetch it): a faint diagonal hatch so the
-   track reads as "no data" rather than an empty 0% bar. */
-.cu-chip--na .cu-mini {
-  background-image: repeating-linear-gradient(
-    -45deg,
-    rgba(255, 255, 255, 0.14) 0, rgba(255, 255, 255, 0.14) 2px,
-    transparent 2px, transparent 4px
-  );
-}
-.cu-chip--na .cu-chip-label { opacity: 0.55; }
-
-/* "All accounts" mode: the strip becomes a vertical stack — brand line on top,
-   one 5H/7D meter-pair row per account below. */
-.cu-strip--all { flex-direction: column; align-items: flex-start; gap: 5px; }
-.cu-all { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+/* ── Claude accounts — one 5H/7D meter-pair row per account ── */
+/* The row stack is the whole strip: brand on the left, AUTO on the right, rows
+   filling the middle. flex-grow + min-width: 0 (not width: 100%) keeps the
+   stack beside its neighbours instead of wrapping onto its own line. */
+.cu-all { display: flex; flex-direction: column; gap: 5px; flex: 1 1 auto; min-width: 0; }
 .cu-acct-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .cu-acct-row--na { opacity: 0.55; }
 .cu-acct-name {
@@ -1255,11 +1204,16 @@ body.skin-corvette {
   white-space: nowrap;
   color: var(--cu-dim);
 }
-.cu-meter--acct { flex: 0 0 auto; }
+/* flex-grow is what gives the track its width: at flex: 0 0 auto the meter sits
+   at min-content, the empty segs have no intrinsic size, and the bar collapses
+   to its padding — the "bars disappear" bug. Same grow/max as the main meters. */
+.cu-meter--acct { flex: 1 1 auto; }
 .cu-auto { display: flex; align-items: center; gap: 6px; }
 /* Narrow enough and the word AUTO is what pushes its own value past the right
    edge. The lit dot already says which state this is, so the word goes first. */
 @container (max-width: 560px) {
   .cu-auto .cu-label { display: none; }
+  /* Halve the gap cost so the 64px floor spends its width on lit segs. */
+  .cu-track { gap: 1px; }
 }
 .cu-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.15); }
