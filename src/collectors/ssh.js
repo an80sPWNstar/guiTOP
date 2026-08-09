@@ -5,6 +5,19 @@ function fingerprint(keyBuf) {
   return 'SHA256:' + crypto.createHash('sha256').update(keyBuf).digest('base64')
 }
 
+// Our remote commands are POSIX sh, but ssh runs them under the remote user's
+// LOGIN shell. fish/csh/tcsh cannot parse `for ...; do ...; done` and reject the
+// string at parse time -- exit 127, nothing runs, and the host reports as down.
+// Both PROBE_CMD and SYSFS_CMD contain such a loop, so both are affected.
+// Wrapping makes the shell we wrote for the shell that runs.
+//
+// Escaping single quotes is the only quoting a POSIX single-quoted string needs;
+// everything else, including $ and \, is literal inside it. Callers still pass
+// fixed constants only -- this does not open an interpolation path.
+function posixWrap(command) {
+  return `sh -c '${command.replace(/'/g, "'\\''")}'`
+}
+
 function execRemote(hostConfig, command) {
   return new Promise((resolve, reject) => {
     const { host, port = 22, username, password, knownHostKey, onUnknownKey } = hostConfig
@@ -13,7 +26,7 @@ function execRemote(hostConfig, command) {
     conn.on('error', (err) => reject(err))
 
     conn.on('ready', () => {
-      conn.exec(command, (err, stream) => {
+      conn.exec(posixWrap(command), (err, stream) => {
         if (err) { conn.end(); return reject(err) }
 
         let stdout = ''
@@ -112,4 +125,4 @@ function testConnect(hostConfig) {
   })
 }
 
-module.exports = { execRemote, testConnect, fingerprint }
+module.exports = { execRemote, testConnect, fingerprint, posixWrap }

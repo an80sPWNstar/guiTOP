@@ -17,6 +17,8 @@
     "build:dir": "electron-builder --win --dir",
     "build:win": "cmd.exe /c \"$(wslpath -w .)\\build-win.bat\"",
     "build:linux": "electron-builder --linux",
+    "build:linux:arm64": "electron-builder --linux --arm64",
+    "build:linux:armv7l": "electron-builder --linux --armv7l",
     "test": "node test/run.js",
     "probe": "node tools/gpu-probe.js"
   },
@@ -30,6 +32,7 @@
   "build": {
     "appId": "com.guitop.app",
     "productName": "guiTOP",
+    "npmRebuild": false,
     "files": [
       "main.js",
       "preload.js",
