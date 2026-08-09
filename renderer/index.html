@@ -102,7 +102,10 @@
   </div>
 
   <div id="panel-single" class="tab-panel active">
-    <select id="host-select" class="host-select"></select>
+    <div class="host-bar">
+      <select id="host-select" class="host-select"></select>
+      <div id="single-sys"></div>
+    </div>
     <div id="single-gpus" class="gpu-grid"></div>
     <button id="single-proc-toggle" class="proc-toggle" style="display:none">Show Processes</button>
     <div id="single-procs" style="display:none"></div>
@@ -170,6 +173,7 @@
   <script src="widgets/gpu-card-bars.js"></script>
   <script src="widgets/gpu-card-corvette.js"></script>
   <script src="widgets/process-table.js"></script>
+  <script src="widgets/host-meters.js"></script>
   <script src="widgets/claude-usage-strip.js"></script>
   <script src="renderer.js"></script>
 </body>

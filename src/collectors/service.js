@@ -6,6 +6,7 @@ const { fetchLocal, GPU_CMD, PROC_CMD } = require('./nvidia-smi')
 const { parseGpus, parseProcesses, parsePs } = require('./parse')
 const { execRemote } = require('./ssh')
 const vendor = require('./vendor')
+const hostStats = require('./host-stats')
 const amdSmi = require('./amd-smi')
 const amdSysfs = require('./amd-sysfs')
 const mock = require('./mock')
@@ -229,9 +230,10 @@ function startHost(hostEntry, onData, { interval = DEFAULT_INTERVAL, useMock = f
   let timer = null
   let running = true
 
-  // Which backend won each slot on this host. Lives with the poll loop, so it is
-  // gone when the host is removed.
-  const state = { chosen: {} }
+  // Which backend won each slot on this host, plus the previous CPU sample the
+  // host-stats delta needs. Lives with the poll loop, so it is gone when the
+  // host is removed -- a re-added host starts with no stale baseline.
+  const state = { chosen: {}, sys: {} }
 
   async function tick() {
     const payload = {
@@ -241,7 +243,14 @@ function startHost(hostEntry, onData, { interval = DEFAULT_INTERVAL, useMock = f
       ts: Date.now(),
       gpus: [],
       processes: [],
+      sys: null,
     }
+
+    // Host CPU/RAM is independent of which GPU backend won, and never rejects,
+    // so it runs alongside the GPU poll rather than inside it.
+    const sysPromise = useMock
+      ? Promise.resolve(mock.sys())
+      : hostStats.sample(hostEntry, state.sys)
 
     try {
       const result = useMock ? mock.fetch(3, mockVendor) : await pollHost(hostEntry, state)
@@ -253,6 +262,8 @@ function startHost(hostEntry, onData, { interval = DEFAULT_INTERVAL, useMock = f
       payload.ok = false
       payload.error = err.message || String(err)
     }
+
+    payload.sys = await sysPromise
 
     if (running) onData(payload)
   }

@@ -143,6 +143,38 @@ The script is passed with `-EncodedCommand` (UTF-16LE base64), so no shell quoti
 
 `claude-swap.js` still spawns its own PowerShell for AUTO-chip detection, but only on its 45 second poll. Folding it in would mean adding `CommandLine` to the 3 second process query, which is the field that makes that payload large.
 
+## Host CPU and RAM
+
+`src/collectors/host-stats.js` supplies the machine-level pair nvitop shows above its GPU panels.
+It is reported once per host, beside the host name, and never on a GPU card: the numbers describe
+the box, so repeating them on every card would say the same thing three times.
+
+Neither path spawns a process. The local host reads `os.cpus()` and `os.totalmem()`/`os.freemem()`,
+which works on every platform and is why Windows needs no PowerShell here. Remote hosts add one
+fixed command to the existing per-tick SSH calls, `cat /proc/stat /proc/meminfo 2>/dev/null; true`
+— both files in one call so the CPU and memory halves describe the same instant, and the forced
+zero exit because `ssh.js` rejects a non-zero status and `cat` fails on a host with no `/proc`,
+which is a normal state rather than an error. A non-Linux or unreachable host reports `sys: null`
+and the renderer draws no meters. The sample never rejects; a host whose GPU backend is broken
+still shows CPU and RAM.
+
+CPU percent is a **rate**, and the kernel only exposes cumulative jiffies, so it needs two samples.
+The previous one lives in the per-host poll-loop state, which means a freshly added host, a host
+that just came back from an outage, and a host whose counters went backwards after a reboot all
+report `null` for one tick rather than a fabricated `0%` — 0% is a claim that the machine is idle.
+`iowait` counts as idle, matching `top` and nvitop.
+
+The two paths do not define "used" identically, and cannot: `os.freemem()` is `MemFree` on Linux
+and available physical memory on Windows, while the remote path uses `MemTotal - MemAvailable`,
+which counts reclaimable cache as free. The same Linux box therefore reads slightly fuller polled
+locally than polled over SSH. Compare a host against itself, not against another.
+
+The widget is `renderer/widgets/host-meters.js` — one widget, not three. Every skin-specific value
+is an `--hm-*` custom property in `main.css`, the same arrangement the Claude strip uses for
+`--cu-*`, so Bars gets its cyan/indigo and Orbitron, Corvette gets amber DSEG14 on a recessed
+panel with square bar ends, and Gauges gets the default teal/amber. The shell is built once and
+only the numbers and bar widths change per tick.
+
 ## Commands
 | Command | What |
 |---------|------|
@@ -246,6 +278,10 @@ Current test suites:
 *   `test/merge.test.js`: Validates mixed-vendor index merging logic.
 *   `test/commands.test.js`: Guards the integrity of fixed remote command strings.
 *   `test/claude-web.test.js`: Covers where the claude.ai session key ends up — encrypted, plaintext-by-consent, or memory-only after refusal — plus file mode, prior-consent handling, stale-key clearing and logout. `electron` is stubbed in the module cache, since this is main-process code that cannot be driven headlessly.
+*   `test/host-stats.test.js`: Covers the `/proc/stat` and `/proc/meminfo` parsers and the CPU
+    delta arithmetic, with most of its weight on the states that must read as `null` rather than
+    `0%`: a first tick, a repeated tick, counters that went backwards after a reboot, and the tick
+    after an unreadable sample. Also guards the forced zero exit on the remote command.
 *   `test/cswap.test.js`: Validates the per-platform cswap invocation and `cswap auto` detection — command-line matching against real `uv`-launched command lines, and both PowerShell date serialisations.
 
 **Exit Code Handling**: `ssh.js` rejects connections when a remote command exits with a non-zero status. Both the backend probe command and the final sysfs dump command conclude with shell tests that legitimately fail on healthy machines. Both commands must explicitly force a zero exit code. `commands.test.js` asserts this behavior.

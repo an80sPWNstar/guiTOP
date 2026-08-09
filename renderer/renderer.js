@@ -424,11 +424,24 @@ function sortProcesses(processes) {
   return sorted
 }
 
+// Built once and then only updated, so the 1 Hz tick does not rebuild the shell.
+function updateSingleSys(payload) {
+  const box = document.getElementById('single-sys')
+  if (!box) return
+  if (!box.firstElementChild) box.innerHTML = HostMeters.render()
+  HostMeters.update(box.firstElementChild, payload ? payload.sys : null)
+}
+
 function renderSingle() {
   const container = document.getElementById('single-gpus')
   const procsDiv = document.getElementById('single-procs')
   const toggle = document.getElementById('single-proc-toggle')
   const payload = state.data[state.selectedHost]
+
+  // The meters belong to the machine, not to its cards, so they sit beside the
+  // host picker and survive an error state -- a host with a broken GPU backend
+  // still has a CPU and RAM worth watching.
+  updateSingleSys(payload)
 
   if (!payload) {
     container.innerHTML = '<div class="dim-note">Waiting for data...</div>'
@@ -475,7 +488,10 @@ function renderMulti() {
     let html = ''
     for (const label of state.hosts) {
       const payload = state.data[label]
-      html += `<div class="host-header">${escapeHtml(label)}</div>`
+      html += `<div class="host-header">` +
+        `<span class="host-name">${escapeHtml(label)}</span>` +
+        `<span class="host-meters-slot" data-host-sys="${escapeHtml(label)}">${HostMeters.render()}</span>` +
+        `</div>`
       if (!payload) {
         html += '<div class="dim-note">Waiting...</div>'
       } else if (!payload.ok) {
@@ -489,6 +505,13 @@ function renderMulti() {
 
   for (const label of state.hosts) {
     const payload = state.data[label]
+
+    // Meters update even for a host whose GPU poll failed -- the rebuild above
+    // only fires when the host set or error state changes, so this is what keeps
+    // them live between rebuilds.
+    const slot = container.querySelector(`.host-meters-slot[data-host-sys="${CSS.escape(label)}"]`)
+    if (slot) HostMeters.update(slot.firstElementChild, payload ? payload.sys : null)
+
     if (!payload || !payload.ok) continue
     const grid = container.querySelector(`.gpu-grid[data-host-grid="${CSS.escape(label)}"]`)
     if (!grid) continue

@@ -352,6 +352,134 @@ body {
   margin-bottom: var(--gap);
 }
 
+/* ── Host CPU/RAM meters ─────────────────────── */
+/* One widget, three looks. Every skin-specific value is a --hm-* custom
+   property, the same arrangement the Claude strip uses, so the markup in
+   host-meters.js never needs to know which skin is active. The defaults below
+   are the Gauges look. */
+body {
+  --hm-lbl-font: 'Rajdhani', sans-serif;
+  --hm-val-font: 'Rajdhani', sans-serif;
+  --hm-lbl-color: var(--text-dim);
+  --hm-val-color: var(--text-secondary);
+  --hm-track-bg: rgba(255, 255, 255, 0.06);
+  --hm-track-h: 6px;
+  --hm-track-w: 54px;
+  --hm-radius: 3px;
+  --hm-cpu-fill: linear-gradient(90deg, #00b894, #00d4aa);
+  --hm-mem-fill: linear-gradient(90deg, #d18b1c, #f5a623);
+}
+
+/* The Single tab's picker and meters share one row, so the meters sit right of
+   the machine name in both tabs. The picker's own bottom margin moves here or
+   the row and the grid below it end up double-spaced. */
+.host-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: var(--gap);
+  flex-wrap: wrap;
+}
+.host-bar .host-select { margin-bottom: 0; }
+
+.host-meters {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* The Multi header is a glowing blue heading; the meters sit inside it but must
+   not inherit that glow or its weight, or the numbers smear. */
+.host-header .host-meters-slot {
+  display: inline-flex;
+  margin-left: 6px;
+  text-shadow: none;
+  font-weight: 400;
+}
+
+.hm-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hm-lbl {
+  font-family: var(--hm-lbl-font);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--hm-lbl-color);
+}
+
+.hm-track {
+  display: inline-block;
+  width: var(--hm-track-w);
+  height: var(--hm-track-h);
+  background: var(--hm-track-bg);
+  border-radius: var(--hm-radius);
+  overflow: hidden;
+}
+
+.hm-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: var(--hm-radius);
+  transition: width 0.6s ease;
+}
+
+.hm-fill-cpu { background: var(--hm-cpu-fill); }
+.hm-fill-mem { background: var(--hm-mem-fill); }
+
+/* Tabular figures stop the row from twitching sideways once a second as the
+   digits change width. */
+.hm-val {
+  font-family: var(--hm-val-font);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--hm-val-color);
+  font-variant-numeric: tabular-nums;
+  min-width: 5.5ch;
+}
+
+/* Bars: the card palette -- cyan for load, indigo for memory, matching
+   .bar-fill and .bar-fill-mem so a host reads the same as its cards. */
+body.skin-bars {
+  --hm-lbl-font: 'Orbitron', sans-serif;
+  --hm-lbl-color: rgba(255, 255, 255, 0.35);
+  --hm-val-color: rgba(255, 255, 255, 0.55);
+  --hm-track-h: 8px;
+  --hm-radius: 4px;
+  --hm-cpu-fill: linear-gradient(90deg, #0891b2, #22d3ee);
+  --hm-mem-fill: linear-gradient(90deg, #6366f1, #a78bfa);
+}
+
+/* Corvette: amber seven-segment on a recessed black panel, flat-ended bars --
+   the dash has no rounded corners and no gradients. */
+body.skin-corvette {
+  --hm-lbl-font: 'Rajdhani', sans-serif;
+  --hm-val-font: 'DSEG14-Classic', monospace;
+  --hm-lbl-color: rgba(255, 176, 0, 0.55);
+  --hm-val-color: #FFB000;
+  --hm-track-bg: #0d0a04;
+  --hm-track-h: 10px;
+  --hm-radius: 0;
+  --hm-cpu-fill: #FFB000;
+  --hm-mem-fill: #FF8C00;
+}
+
+body.skin-corvette .hm-track {
+  box-shadow: inset 0 0 8px rgba(255, 140, 0, 0.30);
+}
+
+/* DSEG14 is a fixed-width display face and runs wide; 12px of it next to a
+   13px host name reads as the same size. */
+body.skin-corvette .hm-val {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  min-width: 7ch;
+}
+
 /* ── Process table ───────────────────────────── */
 .proc-toggle {
   background: var(--bg-surface);

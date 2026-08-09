@@ -60,4 +60,17 @@ function fetch(gpuCount = 3, vendor = 'nvidia') {
   return { gpus, processes }
 }
 
-module.exports = { fetch }
+// Host CPU/RAM, same shape as host-stats produces. 64 GB box, so the meters
+// have a realistic total to divide by.
+function sys() {
+  const memTotalKb = 64 * 1024 * 1024
+  const memUsedKb = randomBetween(memTotalKb * 0.2, memTotalKb * 0.8)
+  return {
+    cpuPct: randomBetween(0, 100),
+    memUsedKb,
+    memTotalKb,
+    memPct: Math.round((memUsedKb / memTotalKb) * 1000) / 10,
+  }
+}
+
+module.exports = { fetch, sys }
