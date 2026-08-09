@@ -19,6 +19,11 @@ const PROC_CMD = 'amd-smi process --json'
 // from that table, so ask only for the fields parseRocmSmi actually reads.
 const ROCM_FLAGS = ['--showproductname', '--showuniqueid', '--showuse', '--showmeminfo', 'vram', '--showtemp', '--showpower', '--showmaxpower', '--showfan', '--showclocks']
 const ROCM_CMD = `rocm-smi ${ROCM_FLAGS.join(' ')} --json`
+// Marketing names never change, so amd-names.js asks for them once per host and
+// caches. Deliberately narrower than ROCM_FLAGS: the fewer tables rocm-smi has to
+// build, the fewer ways this can hit an abort like the --showallinfo one above.
+const ROCM_NAME_FLAGS = ['--showproductname', '--showbus']
+const ROCM_NAME_CMD = `rocm-smi ${ROCM_NAME_FLAGS.join(' ')} --json`
 
 function staticArgs() {
   return ['static', '--json']
@@ -34,6 +39,10 @@ function procArgs() {
 
 function rocmArgs() {
   return [...ROCM_FLAGS, '--json']
+}
+
+function rocmNameArgs() {
+  return [...ROCM_NAME_FLAGS, '--json']
 }
 
 function execLocal(args) {
@@ -430,6 +439,7 @@ function parseRocmSmi(jsonText) {
 
       let name = null
       let uuid = null
+      let pciBus = null
       let utilization = null
       let memoryUsed = null
       let memoryTotal = null
@@ -454,6 +464,10 @@ function parseRocmSmi(jsonText) {
           uuid = val
         } else if (k.includes('serial number') && uuid === null) {
           uuid = val
+        } else if (k.includes('pci bus')) {
+          // Kept so a caller can join these cards to another backend's by bus
+          // address. The cardN key cannot do that job -- see amd-names.js.
+          pciBus = val
         } else if (k.includes('gpu use')) {
           utilization = unwrapUnit(val)
         } else if (k.includes('vram total used memory')) {
@@ -490,6 +504,7 @@ function parseRocmSmi(jsonText) {
       gpus.push({
         index,
         uuid: uuid || `AMD-${index}`,
+        pciBus,
         name: name || 'Unknown',
         utilization,
         memoryUsed,
@@ -530,10 +545,12 @@ module.exports = {
   METRIC_CMD,
   PROC_CMD,
   ROCM_CMD,
+  ROCM_NAME_CMD,
   staticArgs,
   metricArgs,
   procArgs,
   rocmArgs,
+  rocmNameArgs,
   execLocal,
   execLocalRocm,
   parseAmdSmi,

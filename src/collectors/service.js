@@ -8,6 +8,7 @@ const { execRemote } = require('./ssh')
 const vendor = require('./vendor')
 const amdSmi = require('./amd-smi')
 const amdSysfs = require('./amd-sysfs')
+const amdNames = require('./amd-names')
 const mock = require('./mock')
 
 // Windows WDDM: nvidia-smi reports per-process used_memory as [N/A]. Perf
@@ -97,9 +98,12 @@ async function pollRemoteRocmSmi(hostConfig) {
   return { gpus: amdSmi.parseRocmSmi(out), processes: [] }
 }
 
+// sysfs has no product_name on consumer cards, so the parse can only name them
+// by device ID. enrich() fills those in from rocm-smi, once per host, and is a
+// no-op when every card already has a real name.
 async function pollRemoteAmdSysfs(hostConfig) {
   const out = await execRemote(hostConfig, amdSysfs.SYSFS_CMD)
-  return { gpus: amdSysfs.parseSysfs(out), processes: [] }
+  return amdNames.enrich(hostConfig, { gpus: amdSysfs.parseSysfs(out), processes: [] })
 }
 
 const REMOTE_POLLERS = {
@@ -113,7 +117,7 @@ const LOCAL_POLLERS = {
   'nvidia': pollLocalNvidia,
   'amd-smi': () => amdSmi.fetchLocal(),
   'rocm-smi': async () => ({ gpus: amdSmi.parseRocmSmi(await amdSmi.execLocalRocm(amdSmi.rocmArgs())), processes: [] }),
-  'amd-sysfs': () => amdSysfs.fetchLocal(),
+  'amd-sysfs': async (hostEntry) => amdNames.enrich(hostEntry, await amdSysfs.fetchLocal()),
 }
 
 // One host can hold cards from both vendors. Each backend numbers its own cards
