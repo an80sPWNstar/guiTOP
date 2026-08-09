@@ -93,6 +93,18 @@ ok('baseline was dropped', !state.prevCpu)
 const afterBreak = hs.parseRemote(NEXT_STAT + '\n' + MEMINFO, state)
 eq('tick after a break is null again, not a spike', afterBreak.cpuPct, null)
 
+console.log('baseline source tagging:')
+// /proc/stat counts jiffies and os.cpus() counts milliseconds, so a delta taken
+// across a switch between them is arithmetic on two different units. It happens
+// for real when /proc becomes unreadable mid-session and the local sampler falls
+// back to the os path.
+const mixed = {}
+eq('first os sample is null', hs.baseline(mixed, 'os', { idle: 100, total: 200 }), null)
+eq('same source deltas normally', hs.baseline(mixed, 'os', { idle: 150, total: 300 }), 50)
+eq('switching source discards the baseline', hs.baseline(mixed, 'proc', { idle: 900, total: 1800 }), null)
+eq('and the new source deltas from there', hs.baseline(mixed, 'proc', { idle: 950, total: 1900 }), 50)
+eq('switching back discards again', hs.baseline(mixed, 'os', { idle: 10, total: 20 }), null)
+
 console.log('local sample:')
 const localState = {}
 const l1 = hs.sampleLocal(localState)

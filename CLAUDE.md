@@ -164,10 +164,28 @@ that just came back from an outage, and a host whose counters went backwards aft
 report `null` for one tick rather than a fabricated `0%` — 0% is a claim that the machine is idle.
 `iowait` counts as idle, matching `top` and nvitop.
 
-The two paths do not define "used" identically, and cannot: `os.freemem()` is `MemFree` on Linux
-and available physical memory on Windows, while the remote path uses `MemTotal - MemAvailable`,
-which counts reclaimable cache as free. The same Linux box therefore reads slightly fuller polled
-locally than polled over SSH. Compare a host against itself, not against another.
+A Linux host reads its own `/proc/stat` and `/proc/meminfo` even when it is the local machine, so
+local and remote produce identical figures; `os.*` is the fallback for everything else. Memory is
+not what motivates that. Node 18's `os.freemem()` on Linux already returns `MemAvailable` exactly
+— measured at 27699256 kB against the same value in `/proc/meminfo` — so the two agreed anyway.
+That is a libuv implementation choice rather than a documented guarantee, and it varies by
+platform.
+
+CPU is the difference that shows up today: `os.cpus()` reports user, nice, sys, idle and irq, and
+has no `iowait` or `steal` column at all, while this collector counts `iowait` as idle the way
+`top` and nvitop do. A box waiting on disk therefore reads busier through `os.cpus()` — those
+jiffies are absent from the total rather than counted as idle — and a VM losing time to its
+hypervisor reads busier still. Verified on a Linux box: the `/proc` path reported 37922600 kB used
+against `free -k`'s 37923356 kB in the same second.
+
+On Windows `os.freemem()` is available physical memory, the quantity Task Manager subtracts for
+"In use", so that path is right as it stands. macOS is unconfirmed — libuv reports free pages
+there, which excludes inactive and purgeable memory and would read fuller than Activity Monitor,
+but there is no Mac to check it on and no mac build target yet.
+
+The two sources count in different units — `/proc/stat` in jiffies, `os.cpus()` in milliseconds —
+so the CPU baseline is tagged with its source and discarded if the source changes mid-session,
+which happens if `/proc` becomes unreadable and the sampler falls back.
 
 The widget is `renderer/widgets/host-meters.js` — one widget, not three. Every skin-specific value
 is an `--hm-*` custom property in `main.css`, the same arrangement the Claude strip uses for

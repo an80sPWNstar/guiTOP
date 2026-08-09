@@ -14,6 +14,7 @@
 // after it comes back from an outage) has nothing to compare against and
 // reports null rather than a made-up 0%.
 
+const fs = require('fs')
 const os = require('os')
 const { execRemote } = require('./ssh')
 
@@ -105,16 +106,67 @@ function shape(cpuPct, mem) {
   }
 }
 
-// os.freemem() is not MemFree and not quite MemAvailable either: on Windows it
-// is available physical memory, on Linux it is MemFree. So a Linux box polled
-// locally reads slightly fuller than the same box polled over SSH, where
-// MemAvailable counts reclaimable cache as free. Both are honest answers to
-// "how much is in use"; they are just not the same question, and no local API
-// exposes the remote one. Compare a host against itself, not against another.
+// The two sources count in different units -- /proc/stat in jiffies, os.cpus() in
+// milliseconds -- so a delta taken across a switch between them is meaningless.
+// Tag the baseline with where it came from and drop it when that changes.
+function baseline(state, src, cur) {
+  const prev = state.prevSrc === src ? state.prevCpu : null
+  const pct = cpuPercentFrom(prev, cur)
+  if (cur) {
+    state.prevCpu = cur
+    state.prevSrc = src
+  }
+  return pct
+}
+
+// Linux exposes the same two files locally that the SSH path reads remotely, so
+// read them directly and a Linux box reports identically either way.
+//
+// Memory is NOT the reason. Measured on Node 18: os.freemem() on Linux returns
+// MemAvailable exactly (27699256 kB against /proc/meminfo's 27699256), so the
+// two agreed already. But that is a libuv implementation choice, not a documented
+// guarantee, and it differs per platform -- which is precisely the kind of thing
+// that changes under a runtime upgrade without anyone noticing.
+//
+// CPU is the reason that bites today: os.cpus() reports user, nice, sys, idle and
+// irq, with no iowait and no steal column at all. /proc/stat has both, and this
+// collector counts iowait as idle the way top and nvitop do. So a box waiting on
+// disk reads busier through os.cpus() than through /proc/stat -- the iowait
+// jiffies are missing from the total rather than counted as idle -- and a VM
+// losing time to its hypervisor reads busier still.
+//
+// Returns undefined -- not null -- when the files cannot be read, since null is a
+// real answer here meaning "no reading available".
+function sampleLinuxLocal(state) {
+  let statText, memText
+  try {
+    statText = fs.readFileSync('/proc/stat', 'utf8')
+    memText = fs.readFileSync('/proc/meminfo', 'utf8')
+  } catch (_) {
+    return undefined
+  }
+
+  const cpu = parseProcStat(statText)
+  const mem = parseMeminfo(memText)
+  if (!cpu || !mem) return undefined
+
+  return shape(baseline(state, 'proc', cpu), mem)
+}
+
+// The portable path. On Windows os.freemem() is available physical memory, the
+// same quantity Task Manager subtracts to show "In use", so used = total - free
+// is the number a Windows user expects; this is verified against Task Manager.
+// macOS is the open question -- libuv reports free pages there, which excludes
+// inactive and purgeable memory and would read fuller than Activity Monitor
+// shows, but there is no Mac here to confirm it on and no mac build target yet.
+// Linux only reaches this path if /proc is unreadable.
 function sampleLocal(state) {
-  const cur = localCpuTimes()
-  const cpuPct = cpuPercentFrom(state.prevCpu, cur)
-  if (cur) state.prevCpu = cur
+  if (process.platform === 'linux') {
+    const viaProc = sampleLinuxLocal(state)
+    if (viaProc !== undefined) return viaProc
+  }
+
+  const cpuPct = baseline(state, 'os', localCpuTimes())
 
   const total = os.totalmem()
   const free = os.freemem()
@@ -125,11 +177,10 @@ function sampleLocal(state) {
 
 function parseRemote(out, state) {
   const cur = parseProcStat(out)
-  const cpuPct = cpuPercentFrom(state.prevCpu, cur)
+  const cpuPct = baseline(state, 'proc', cur)
   // Only advance the baseline on a sample we could actually read, or one
   // unparseable tick would be charged to the next good one as a spike.
-  if (cur) state.prevCpu = cur
-  else state.prevCpu = null
+  if (!cur) state.prevCpu = null
   return shape(cpuPct, parseMeminfo(out))
 }
 
@@ -151,8 +202,9 @@ async function sample(hostEntry, state) {
   }
 }
 
+// baseline is exported for tests only.
 module.exports = {
   sample, sampleLocal, parseRemote,
-  parseProcStat, parseMeminfo, cpuPercentFrom, memPct,
+  parseProcStat, parseMeminfo, cpuPercentFrom, memPct, baseline,
   HOST_STAT_CMD,
 }
