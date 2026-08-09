@@ -108,6 +108,11 @@ const ClaudeUsageStrip = (() => {
     renderAcctRows(allEl, accounts, data, t)
 
     updateAuto(root, swap, t)
+
+    // Caller hides the whole strip on false: with no cswap and no usage payload
+    // there is nothing to draw, and a brand label over an empty bar reads as a
+    // broken meter rather than as "not configured".
+    return accounts.length > 0
   }
 
   function renderAcctRows(allEl, accounts, data, t) {

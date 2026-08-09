@@ -74,13 +74,16 @@ function renderClaudeStrip() {
   claudeBtn.style.color = on ? theme.accent : ''
   claudeArrow.textContent = on ? (dock === 'bottom' ? '▾' : '▴') : ''
 
-  claudeTopEl.style.display = dock === 'top' ? 'block' : 'none'
-  claudeBottomEl.style.display = dock === 'bottom' ? 'block' : 'none'
+  claudeTopEl.style.display = 'none'
+  claudeBottomEl.style.display = 'none'
 
   const target = dock === 'top' ? claudeTopEl : dock === 'bottom' ? claudeBottomEl : null
   if (!target) return
   if (!target.querySelector('.cu-strip')) target.innerHTML = ClaudeUsageStrip.render()
-  ClaudeUsageStrip.update(target, state.claudeUsage, state.skin, state.claudeSwap)
+  // A machine with no cswap and no Claude credentials has no rows to draw, so
+  // the dock stays empty rather than reserving a bar for a brand label.
+  const hasRows = ClaudeUsageStrip.update(target, state.claudeUsage, state.skin, state.claudeSwap)
+  target.style.display = hasRows ? 'block' : 'none'
 }
 
 // ── Claude account management (native cswap: alias/enable/disable/remove/add) ──

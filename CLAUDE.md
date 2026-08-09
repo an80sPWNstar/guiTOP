@@ -80,6 +80,11 @@ guiTOP/
 - **claude-swap.js**: same cswap call, extracts per-account 5h/7d pct + alias.
 - **Display name**: `GUITOP_DISPLAY_NAME` env var set in main.js; defaults to an80sPWNstar. Falls back to email prefix if unset.
 - **Widget**: `renderClaudeStrip()` in renderer.js. Dock cycles top → bottom → off.
+- **Empty state**: with no cswap and no usage payload there are no account rows, so the whole
+  strip is hidden rather than docked as a brand label over an empty bar. `update()` returns
+  whether it drew any rows and the caller sets the dock container's display from that. The dock
+  is `top` by default, so without this a machine with no cswap — a Pi, any Linux tester's box —
+  opens with a dead bar across the top of the window.
 - **Dev endpoint**: `GET /claude/toggle` — cycles dock position.
 - **AUTO chip**: `cswap auto` is a foreground loop with no daemon, pidfile or lockfile, so the only way to know it runs is to look for the process. `detectAuto()` in `claude-swap.js` matches the COMMAND LINE, never the process name: `uv`-installed tools run as `python.exe` with the shim path in their arguments. Windows uses one `Get-CimInstance Win32_Process` call (~230 ms), other platforms use `pgrep -af cswap`, which reports no start time so `autoSinceMin` is null there. A detection that cannot run reports "not detected" rather than an error.
 
