@@ -5,8 +5,9 @@
 // `for ...; do ...; done` in PROBE_CMD is a parse error: exit 127, nothing runs,
 // and the host reports as down. posixWrap() is what stops that.
 //
-// The sh assertions run everywhere. The fish assertions self-skip if fish is not
-// installed, so this file is safe on a bash-only CI box.
+// The wrapper-shape assertions are pure string work and run everywhere. The ones
+// that actually execute a shell self-skip when that shell is absent -- fish on a
+// bash-only CI box, and /bin/sh on Windows, where development happens.
 const { execFileSync } = require('child_process')
 const { posixWrap } = require('../src/collectors/ssh.js')
 const vendor = require('../src/collectors/vendor.js')
@@ -23,8 +24,17 @@ function viaLoginShell(shell, command) {
   return execFileSync(shell, ['-c', posixWrap(command)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
+function haveShell(shell) {
+  try { execFileSync(shell, ['-c', 'exit 0'], { stdio: 'ignore' }); return true }
+  catch { return false }
+}
+
+// Windows has no /bin/sh, so every shell round-trip below is skipped there.
+const SH = haveShell('/bin/sh') ? '/bin/sh' : null
+
 function which(bin) {
-  try { return execFileSync('sh', ['-c', `command -v ${bin}`], { encoding: 'utf8' }).trim() }
+  if (!SH) return null
+  try { return execFileSync(SH, ['-c', `command -v ${bin}`], { encoding: 'utf8' }).trim() }
   catch { return null }
 }
 
@@ -33,17 +43,21 @@ ok('wraps in sh -c', posixWrap('echo hi').startsWith("sh -c '"))
 ok('closes its quote', posixWrap('echo hi').endsWith("'"))
 ok('escapes an embedded single quote', posixWrap("echo 'x'") === "sh -c 'echo '\\''x'\\'''")
 
-console.log('round-trips through /bin/sh:')
-ok('simple command', viaLoginShell('/bin/sh', 'echo hi').trim() === 'hi')
-ok('embedded single quote', viaLoginShell('/bin/sh', `echo "it's fine"`).trim() === "it's fine")
-ok('inner shell owns expansion', viaLoginShell('/bin/sh', 'echo ${NOPE:-ok}').trim() === 'ok')
-ok('backslash escapes survive', viaLoginShell('/bin/sh', `printf 'a\\tb'`) === 'a\tb')
+if (!SH) {
+  console.log('/bin/sh not present -- shell round-trip checks skipped')
+} else {
+  console.log('round-trips through /bin/sh:')
+  ok('simple command', viaLoginShell(SH, 'echo hi').trim() === 'hi')
+  ok('embedded single quote', viaLoginShell(SH, `echo "it's fine"`).trim() === "it's fine")
+  ok('inner shell owns expansion', viaLoginShell(SH, 'echo ${NOPE:-ok}').trim() === 'ok')
+  ok('backslash escapes survive', viaLoginShell(SH, `printf 'a\\tb'`) === 'a\tb')
 
-console.log('the real command constants parse:')
-for (const [name, cmd] of [['PROBE_CMD', vendor.PROBE_CMD], ['SYSFS_CMD', sysfs.SYSFS_CMD]]) {
-  let exit = 0
-  try { viaLoginShell('/bin/sh', cmd) } catch (e) { exit = e.status }
-  ok(`${name} exits 0 under sh`, exit === 0)
+  console.log('the real command constants parse:')
+  for (const [name, cmd] of [['PROBE_CMD', vendor.PROBE_CMD], ['SYSFS_CMD', sysfs.SYSFS_CMD]]) {
+    let exit = 0
+    try { viaLoginShell(SH, cmd) } catch (e) { exit = e.status }
+    ok(`${name} exits 0 under sh`, exit === 0)
+  }
 }
 
 const fish = which('fish')
