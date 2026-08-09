@@ -644,6 +644,40 @@ app.whenReady().then(() => {
       })()`)
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ ok: true, info }))
+    } else if (req.url === '/debug/settings/dismiss' && win && !win.isDestroyed()) {
+      // End-to-end check that dismissing by backdrop discards. Opens Settings,
+      // flips minimizeToTray through the real checkbox (so the live write-through
+      // happens), clicks the overlay, and reports what survived on disk.
+      win.webContents.send('open-settings')
+      await new Promise(r => setTimeout(r, 250))
+      const info = await win.webContents.executeJavaScript(`(async () => {
+        try {
+          const modal = document.getElementById('settings-modal')
+          const box = document.getElementById('setting-minimize-tray')
+          const before = (await window.guiTOP.getSettings()).minimizeToTray
+          box.checked = !before
+          box.dispatchEvent(new Event('change'))
+          await new Promise(r => setTimeout(r, 150))
+          const afterToggle = (await window.guiTOP.getSettings()).minimizeToTray
+          // A click inside the card bubbles to the overlay as well, so this is
+          // the case that decides whether ticking a checkbox closes the dialog.
+          document.querySelector('#settings-modal .modal-card').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+          await new Promise(r => setTimeout(r, 150))
+          const openAfterInsideClick = modal.style.display !== 'none'
+          modal.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+          await new Promise(r => setTimeout(r, 300))
+          const afterDismiss = (await window.guiTOP.getSettings()).minimizeToTray
+          return {
+            before: !!before, afterToggle: !!afterToggle, afterDismiss: !!afterDismiss,
+            wroteThrough: !!afterToggle !== !!before,
+            survivedInsideClick: openAfterInsideClick,
+            reverted: !!afterDismiss === !!before,
+            closed: modal.style.display === 'none',
+          }
+        } catch (e) { return { error: e.message } }
+      })()`)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, info }, null, 2))
     } else if (req.url === '/debug/settings' && win && !win.isDestroyed()) {
       // Opens Settings and reports whether it fits. The failure this guards is a
       // dialog taller than the window: the overlay centres it, so it is clipped

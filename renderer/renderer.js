@@ -237,13 +237,52 @@ async function updateClaudeWebUI() {
   }
 }
 
+// Each toggle writes through the moment it changes, which is what makes the
+// usage-source switch take effect without a restart. Dismissing the dialog by
+// clicking outside it therefore has to actively put back what was there on
+// open, or "close without saving" would be a lie. Snapshot on open.
+const SETTINGS_KEYS = ['launchAtStartup', 'minimizeToTray', 'useOAuthClaude']
+let settingsSnapshot = null
+
 window.guiTOP.onOpenSettings(async () => {
+  const s = await window.guiTOP.getSettings()
+  settingsSnapshot = {}
+  for (const k of SETTINGS_KEYS) settingsSnapshot[k] = !!s[k]
   await loadSettingsUI()
   settingsModal.style.display = 'flex'
 })
 
-document.getElementById('settings-close').addEventListener('click', () => {
+function closeSettings() {
   settingsModal.style.display = 'none'
+  settingsSnapshot = null
+}
+
+// Close is the explicit way out and keeps what was changed; the backdrop is the
+// dismissive one and reverts. Login and logout are not settings and cannot be
+// undone here -- a session key is either captured or gone -- so a revert leaves
+// them alone.
+async function revertSettings() {
+  if (!settingsSnapshot) return
+  const current = await window.guiTOP.getSettings()
+  for (const k of SETTINGS_KEYS) {
+    if (!!current[k] !== settingsSnapshot[k]) {
+      await window.guiTOP.setSetting(k, settingsSnapshot[k])
+    }
+  }
+}
+
+document.getElementById('settings-close').addEventListener('click', closeSettings)
+
+// Only a click that lands on the overlay itself counts. A click inside the card
+// bubbles up to the overlay too, so without the target test, ticking a checkbox
+// would close the dialog and undo the tick.
+settingsModal.addEventListener('click', async (e) => {
+  if (e.target !== settingsModal) return
+  const snapshot = settingsSnapshot
+  closeSettings()
+  settingsSnapshot = snapshot
+  await revertSettings()
+  settingsSnapshot = null
 })
 
 launchStartup.addEventListener('change', async () => {

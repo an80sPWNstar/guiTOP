@@ -218,6 +218,7 @@ only the numbers and bar widths change per tick.
 | `curl localhost:17580/debug/corvette` | Corvette skin geometry dump |
 | `curl localhost:17580/debug/claude-config` | Opens the Claude accounts modal, reports display + row count |
 | `curl localhost:17580/debug/settings` | Opens Settings, reports whether it fits the window and Close is on screen |
+| `curl localhost:17580/debug/settings/dismiss` | Toggles a setting, clicks the backdrop, reports whether it reverted |
 
 ## Build Notes
 - **Cross-compile Windows from WSL**: use `npm run build:win` (PowerShell delegation). Direct `npm run build` fails — needs wine.
@@ -312,6 +313,7 @@ Current test suites:
 *   `GET /debug/gauges` and `GET /debug/corvette`: Dump per-skin element geometry, for checking a layout at a given window size without eyeballing a screenshot.
 *   `GET /debug/claude-config`: Despite the name, this *drives* the UI rather than reporting state — it clicks the Claude accounts button and reports whether the modal opened and how many account rows it holds.
 *   `GET /debug/settings`: Also drives the UI. Settings has no in-app button, so this sends the same `open-settings` message the tray does, then reports the card and viewport rectangles, whether the card fits, whether Close is on screen, and whether the scroll region has more content than it shows. Resize first (`/resize?w=&h=`) to test a size.
+*   `GET /debug/settings/dismiss`: Drives the discard-on-backdrop path end to end — flips `minimizeToTray` through the real checkbox, clicks inside the card, then clicks the backdrop, and reports whether the write-through happened, whether the inside click left the dialog open, and whether the setting came back. Leaves the setting as it found it.
 
 ## Modal Sizing
 
@@ -333,6 +335,25 @@ through `element.style` from JS, which the CSP does allow.
 
 Measured at 407x198, one step off the minimum: card 367x171, fits the viewport, Close visible,
 scroll region showing 33px of 355px of content.
+
+### Dismissing Settings
+
+Clicking the backdrop closes Settings and **discards** what was changed; the Close button keeps it.
+There is no confirmation prompt either way.
+
+That distinction costs real work, because each toggle writes through the instant it changes — which
+is what lets the usage-source switch take effect with no restart. Simply hiding the dialog would
+save everything, so the backdrop path snapshots `launchAtStartup`, `minimizeToTray` and
+`useOAuthClaude` when the dialog opens and writes back any that differ on the way out. Adding a
+setting to Settings means adding its key to `SETTINGS_KEYS`, or it will not be revertible.
+
+Login and logout are actions, not settings, and a revert leaves them alone: a claude.ai session key
+is either captured or destroyed, and neither can be undone by closing a dialog.
+
+The handler fires only when the click lands on the overlay itself. A click inside the card bubbles
+to the overlay too, so without that test ticking a checkbox would close the dialog and then undo
+the tick. `/debug/settings/dismiss` asserts exactly that sequence — write-through happened, an
+inside click left it open, the backdrop reverted and closed it.
 
 **Mock Data**: Launch the application with the `--mock-amd` flag to test the UI against sparse AMD telemetry. This mode feeds mock data shaped like AMD outputs, deliberately omitting fan speed and, on certain cards, power cap data.
 
