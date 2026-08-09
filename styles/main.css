@@ -598,6 +598,74 @@ body.skin-corvette .hm-val {
   width: 360px;
   max-width: 90vw;
   box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  /* A centred overlay clips a too-tall card at BOTH ends, so the title and the
+     buttons go off-screen together and the dialog cannot be dismissed. Every
+     modal therefore scrolls rather than overflows; the window minimum is
+     320x200, which is shorter than some of these dialogs. */
+  max-height: 86vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Settings is the tall one: it grows a section every time a feature gains a
+   toggle. Title and footer are pinned and only the middle scrolls, so Close is
+   always reachable without hunting for it. */
+.modal-card-settings {
+  width: min(440px, 92vw);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-card-settings .modal-title { flex-shrink: 0; margin-bottom: 12px; }
+
+.modal-scroll {
+  flex: 1 1 auto;
+  /* The column-direction shrink trap again: without this the scroll region is
+     laid out at its content height and the card overflows instead. */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Clear of the scrollbar so text is not printed underneath it. */
+  padding-right: 6px;
+}
+
+.set-first { margin-top: 8px; }
+
+.set-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.set-radio { margin-bottom: 6px; }
+
+.set-heading {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.set-rule {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.set-sub {
+  margin: 2px 0 0 24px;
+  font-size: 11px;
+}
+
+.set-status { margin-bottom: 6px; }
+
+.set-login-row { gap: 6px; }
+
+.set-footer {
+  flex-shrink: 0;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .modal-title {

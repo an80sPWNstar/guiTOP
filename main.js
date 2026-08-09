@@ -644,6 +644,35 @@ app.whenReady().then(() => {
       })()`)
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ ok: true, info }))
+    } else if (req.url === '/debug/settings' && win && !win.isDestroyed()) {
+      // Opens Settings and reports whether it fits. The failure this guards is a
+      // dialog taller than the window: the overlay centres it, so it is clipped
+      // at both ends at once and the Close button leaves the screen. Resize the
+      // window first (/resize?w=&h=) to test a given size.
+      // Settings has no in-app button -- the tray menu opens it -- so drive it
+      // the same way the tray does and let the renderer settle before measuring.
+      win.webContents.send('open-settings')
+      await new Promise(r => setTimeout(r, 250))
+      const info = await win.webContents.executeJavaScript(`(() => {
+        try {
+          const card = document.querySelector('#settings-modal .modal-card')
+          const scroll = document.querySelector('#settings-modal .modal-scroll')
+          const close = document.getElementById('settings-close')
+          if (!card) return { error: 'no settings card' }
+          const c = card.getBoundingClientRect(), b = close.getBoundingClientRect()
+          return {
+            viewport: { w: window.innerWidth, h: window.innerHeight },
+            card: { w: Math.round(c.width), h: Math.round(c.height), top: Math.round(c.top), bottom: Math.round(c.bottom) },
+            cardFitsViewport: c.top >= -1 && c.bottom <= window.innerHeight + 1,
+            closeVisible: b.top >= -1 && b.bottom <= window.innerHeight + 1 && b.height > 0,
+            scrollRegion: scroll
+              ? { clientH: scroll.clientHeight, scrollH: scroll.scrollHeight, scrollable: scroll.scrollHeight > scroll.clientHeight + 1 }
+              : null,
+          }
+        } catch (e) { return { error: e.message } }
+      })()`)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, info }, null, 2))
     } else if (req.url === '/debug/strip' && win && !win.isDestroyed()) {
       // Geometry check for the Claude usage strip: reports any pair of leaf
       // elements whose boxes actually intersect. Text that is shrunk below its
