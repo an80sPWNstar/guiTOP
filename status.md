@@ -1,8 +1,45 @@
 # guiTOP — Session Handoff
 
-_Last updated: 2026-08-06 (evening session). Read this + `CLAUDE.md` once at session start._
+_Last updated: 2026-08-09. Read this + `CLAUDE.md` once at session start._
 
-## RESUME HERE — 2026-08-06 (evening, v0.3.10)
+## RESUME HERE — 2026-08-09 (v0.3.11 pushed, Linux builds still blocked)
+
+**Reboot in progress to enable SVM in BIOS.** That is the only thing standing between here and a
+release. WSL will not start until it is on (`HCS_E_HYPERV_NOT_INSTALLED` / "virtualization is not
+enabled"), and WSL is where every Linux and ARM artifact is built.
+
+**After the reboot, in order:**
+1. Confirm `wsl -e echo ok` works.
+2. `npm run build:linux`, then `npm run build:linux:arm64` and `npm run build:linux:armv7l` (the
+   ARM targets came in with PR #1 and were verified on a Pi 5 by its author).
+3. Restore Windows modules afterwards: `powershell.exe -Command 'npm install'`.
+4. Tag and cut ONE GitHub release folding in 0.3.9, 0.3.10 and 0.3.11 — ask Bryan first, it
+   publishes artifacts. This is what actually gets builds to the friend testing on Pi/Arch; a
+   Windows exe is no use to them.
+
+**Shipped this session (all pushed, `f6e27ea..bdd1a2b`):**
+- **PR #1 merged** (apollo-mg): remote commands now run under `sh -c` at the single `conn.exec`
+  chokepoint, because ssh runs the command string under the remote user's LOGIN shell and fish
+  cannot parse `for ...; do ... done` — a healthy host reported as down. Plus `npmRebuild: false`,
+  which is what unblocks ARM. Its new test hardcoded `/bin/sh` and broke `npm test` on Windows;
+  fixed with the same self-skip it already used for fish.
+- **Host CPU/RAM meters** beside the host name, once per host, all three skins
+  (`src/collectors/host-stats.js`, `renderer/widgets/host-meters.js`). Local Linux reads `/proc`
+  directly so it matches what the same box reports over SSH. Note: `os.freemem()` on Linux already
+  returns `MemAvailable` — the reason to read `/proc` is CPU, since `os.cpus()` has no `iowait` or
+  `steal` column.
+- **Modals**: all three (Settings, Manage Claude Accounts, Manage Hosts) scroll with pinned title
+  and Close, and dismiss on an outside click. Settings alone reverts its changes on dismiss,
+  because its toggles write through as they are flipped.
+
+**Trap worth remembering:** the ⚙ button in the tab bar opens *Manage Claude Accounts*, NOT
+Settings — Settings has no in-app button and comes from the tray or Ctrl+,. A whole round of fixes
+went into the wrong dialog before that surfaced. Pin a bug report to an element id first.
+
+**Standing rule:** every "build the installers" means bump the patch version first, then build,
+commit and push — a tester identifies a build by its filename.
+
+## 2026-08-06 (evening, v0.3.10)
 
 **Claude strip redesigned to per-account rows only.** Bryan iterated in four steps: (1) the
 all-accounts stack had invisible bars — `.cu-meter--acct` was `flex: 0 0 auto`, so the meter sat
