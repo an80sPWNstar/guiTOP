@@ -219,6 +219,9 @@ only the numbers and bar widths change per tick.
 | `curl localhost:17580/debug/claude-config` | Opens the Claude accounts modal, reports display + row count |
 | `curl localhost:17580/debug/settings` | Opens Settings, reports whether it fits the window and Close is on screen |
 | `curl localhost:17580/debug/settings/dismiss` | Toggles a setting, clicks the backdrop, reports whether it reverted |
+| `curl localhost:17580/debug/claude-config/dismiss` | Opens the ⚙ accounts dialog, real-clicks outside, reports fit + close |
+| `curl localhost:17580/debug/hosts/dismiss` | Same for Manage Hosts |
+| `curl "localhost:17580/debug/settings/realclick?x=&y=&n="` | Real mouse input at a point, N open/click rounds |
 
 ## Build Notes
 - **Cross-compile Windows from WSL**: use `npm run build:win` (PowerShell delegation). Direct `npm run build` fails — needs wine.
@@ -315,18 +318,24 @@ Current test suites:
 *   `GET /debug/settings`: Also drives the UI. Settings has no in-app button, so this sends the same `open-settings` message the tray does, then reports the card and viewport rectangles, whether the card fits, whether Close is on screen, and whether the scroll region has more content than it shows. Resize first (`/resize?w=&h=`) to test a size.
 *   `GET /debug/settings/dismiss`: Drives the discard-on-backdrop path end to end — flips `minimizeToTray` through the real checkbox, clicks inside the card, then clicks the backdrop, and reports whether the write-through happened, whether the inside click left the dialog open, and whether the setting came back. Leaves the setting as it found it.
 
-## Modal Sizing
+## Modals
+
+**There are two dialogs people call "settings", and they are not the same one.** The ⚙ button in
+the tab bar opens **Manage Claude Accounts** (`#claude-config-modal`) — account rows plus two add
+forms, the tallest dialog in the app. **Settings** (`#settings-modal`) has no in-app button at all:
+it opens from the tray menu or **Ctrl+,**. A bug report about "the settings window" is worth
+pinning to an element id before touching anything, since the obvious button opens the other one.
 
 A `.modal-overlay` centres its card, so a card taller than the window is clipped at the top **and**
 bottom at once — the title and the buttons leave the screen together, and a dialog with no visible
 Close is a dead end. The window minimum is 320x200, which is shorter than several of these dialogs,
 so every `.modal-card` carries `max-height: 86vh` with `overflow-y: auto`.
 
-Settings gets more than that, because it grows a section whenever a feature gains a toggle. It is a
-flex column with `overflow: hidden`; the title and the footer holding Close are `flex-shrink: 0`,
-and only `.modal-scroll` between them scrolls. Close therefore stays on screen at any window size.
-`min-height: 0` on that scroll region is load-bearing for the same reason it is on the tab panel: a
-column flex item is laid out at its content height and will not shrink below it unless told to.
+Both tall dialogs take `.modal-card-tall` on top of that: a flex column with `overflow: hidden`,
+where the title and the `.modal-footer` holding Close are `flex-shrink: 0` and only `.modal-scroll`
+between them scrolls. Close therefore stays on screen at any window size. `min-height: 0` on that
+scroll region is load-bearing for the same reason it is on the tab panel: a column flex item is
+laid out at its content height and will not shrink below it unless told to.
 
 Its inline `style` attributes were replaced with classes at the same time. They were dead: the CSP
 is `style-src 'self'` with no `unsafe-inline`, which blocks style attributes as well as style
@@ -336,10 +345,15 @@ through `element.style` from JS, which the CSP does allow.
 Measured at 407x198, one step off the minimum: card 367x171, fits the viewport, Close visible,
 scroll region showing 33px of 355px of content.
 
-### Dismissing Settings
+### Dismissing a Modal
 
-Clicking the backdrop closes Settings and **discards** what was changed; the Close button keeps it.
-There is no confirmation prompt either way.
+All three dialogs — Settings, Manage Claude Accounts, Manage Hosts — close when the backdrop is
+clicked, with no confirmation prompt.
+
+Only Settings has anything to discard. Manage Claude Accounts and Manage Hosts run every action
+against the CLI or the host list when its own button is pressed, so dismissing them abandons
+nothing but text left in an input. Settings is the exception: clicking the backdrop **discards**
+what was changed, while the Close button keeps it.
 
 That distinction costs real work, because each toggle writes through the instant it changes — which
 is what lets the usage-source switch take effect with no restart. Simply hiding the dialog would

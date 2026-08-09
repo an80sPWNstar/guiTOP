@@ -167,6 +167,14 @@ document.getElementById('cc-close').addEventListener('click', () => {
   claudeConfigModal.style.display = 'none'
 })
 
+// Clicking outside the card dismisses, with no prompt. Nothing is buffered here
+// to discard: every action in this dialog -- alias, enable, remove, add -- runs
+// against the cswap CLI when its own button is pressed, so dismissing only
+// abandons whatever text was left sitting in an input.
+claudeConfigModal.addEventListener('click', (e) => {
+  if (e.target === claudeConfigModal) claudeConfigModal.style.display = 'none'
+})
+
 // ── Settings modal ──────────────────────────────
 const settingsModal = document.getElementById('settings-modal')
 settingsModal.style.display = 'none' // guard: never auto-open on launch

@@ -644,6 +644,92 @@ app.whenReady().then(() => {
       })()`)
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ ok: true, info }))
+    } else if (req.url.startsWith('/debug/hosts/dismiss') && win && !win.isDestroyed()) {
+      const q = new URL(req.url, 'http://x').searchParams
+      const x = Number(q.get('x') || 60)
+      const y = Number(q.get('y') || 400)
+      await win.webContents.executeJavaScript(`document.getElementById('manage-hosts-btn').click()`)
+      await new Promise(r => setTimeout(r, 300))
+      const before = await win.webContents.executeJavaScript(`(() => {
+        const card = document.querySelector('#manage-hosts-modal .modal-card')
+        const close = document.getElementById('mh-close')
+        const c = card.getBoundingClientRect(), b = close.getBoundingClientRect()
+        return {
+          display: document.getElementById('manage-hosts-modal').style.display,
+          card: { w: Math.round(c.width), h: Math.round(c.height) },
+          fits: c.top >= -1 && c.bottom <= window.innerHeight + 1,
+          closeVisible: b.bottom <= window.innerHeight + 1 && b.height > 0,
+        }
+      })()`)
+      win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
+      win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
+      await new Promise(r => setTimeout(r, 300))
+      const after = await win.webContents.executeJavaScript(
+        `document.getElementById('manage-hosts-modal').style.display`)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, ...before, closedByOutsideClick: after === 'none' }, null, 2))
+    } else if (req.url.startsWith('/debug/claude-config/dismiss') && win && !win.isDestroyed()) {
+      // Same real-input check as the Settings one, for the dialog the gear button
+      // actually opens. Clicks land through sendInputEvent, not dispatchEvent.
+      const q = new URL(req.url, 'http://x').searchParams
+      const x = Number(q.get('x') || 60)
+      const y = Number(q.get('y') || 400)
+      const rounds = Number(q.get('n') || 2)
+      const results = []
+      for (let i = 0; i < rounds; i++) {
+        await win.webContents.executeJavaScript(`document.getElementById('claude-config-btn').click()`)
+        await new Promise(r => setTimeout(r, 300))
+        const before = await win.webContents.executeJavaScript(`(() => {
+          const card = document.querySelector('#claude-config-modal .modal-card')
+          const scroll = document.querySelector('#claude-config-modal .modal-scroll')
+          const close = document.getElementById('cc-close')
+          const c = card.getBoundingClientRect(), b = close.getBoundingClientRect()
+          return {
+            display: document.getElementById('claude-config-modal').style.display,
+            card: { w: Math.round(c.width), h: Math.round(c.height) },
+            fits: c.top >= -1 && c.bottom <= window.innerHeight + 1,
+            closeVisible: b.bottom <= window.innerHeight + 1 && b.height > 0,
+            scrollable: scroll ? scroll.scrollHeight > scroll.clientHeight + 1 : null,
+          }
+        })()`)
+        win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
+        win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
+        await new Promise(r => setTimeout(r, 300))
+        const after = await win.webContents.executeJavaScript(
+          `document.getElementById('claude-config-modal').style.display`)
+        results.push({ round: i + 1, ...before, closedByOutsideClick: after === 'none' })
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, point: { x, y }, results }, null, 2))
+    } else if (req.url.startsWith('/debug/settings/realclick') && win && !win.isDestroyed()) {
+      // dispatchEvent bypasses hit-testing, so it cannot see anything sitting on
+      // top of the overlay. sendInputEvent goes through the same path a real
+      // mouse does. Repeats the open/click cycle to catch a fault that only
+      // appears on a second open.
+      const q = new URL(req.url, 'http://x').searchParams
+      const x = Number(q.get('x') || 100)
+      const y = Number(q.get('y') || 400)
+      const rounds = Number(q.get('n') || 2)
+      const results = []
+      for (let i = 0; i < rounds; i++) {
+        win.webContents.send('open-settings')
+        await new Promise(r => setTimeout(r, 400))
+        const opened = await win.webContents.executeJavaScript(
+          `document.getElementById('settings-modal').style.display`)
+        win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
+        win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
+        await new Promise(r => setTimeout(r, 400))
+        const after = await win.webContents.executeJavaScript(`(() => {
+          const el = document.elementFromPoint(${x}, ${y})
+          return {
+            display: document.getElementById('settings-modal').style.display,
+            hitTarget: el ? (el.id || el.className || el.tagName) : null,
+          }
+        })()`)
+        results.push({ round: i + 1, opened, closedByClick: after.display === 'none', hitTarget: after.hitTarget })
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, point: { x, y }, results }, null, 2))
     } else if (req.url === '/debug/settings/dismiss' && win && !win.isDestroyed()) {
       // End-to-end check that dismissing by backdrop discards. Opens Settings,
       // flips minimizeToTray through the real checkbox (so the live write-through

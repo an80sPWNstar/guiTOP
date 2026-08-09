@@ -607,17 +607,17 @@ body.skin-corvette .hm-val {
   overscroll-behavior: contain;
 }
 
-/* Settings is the tall one: it grows a section every time a feature gains a
-   toggle. Title and footer are pinned and only the middle scrolls, so Close is
-   always reachable without hunting for it. */
-.modal-card-settings {
+/* The tall dialogs -- Settings and Manage Claude Accounts -- grow a section
+   every time a feature does. Title and footer are pinned and only the middle
+   scrolls, so Close is always reachable without hunting for it. */
+.modal-card-tall {
   width: min(440px, 92vw);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.modal-card-settings .modal-title { flex-shrink: 0; margin-bottom: 12px; }
+.modal-card-tall .modal-title { flex-shrink: 0; margin-bottom: 12px; }
 
 .modal-scroll {
   flex: 1 1 auto;
@@ -631,6 +631,10 @@ body.skin-corvette .hm-val {
 }
 
 .set-first { margin-top: 8px; }
+
+.modal-btn-block { width: 100%; }
+
+.modal-status-slot { margin-top: 10px; }
 
 .set-check {
   display: flex;
@@ -661,7 +665,7 @@ body.skin-corvette .hm-val {
 
 .set-login-row { gap: 6px; }
 
-.set-footer {
+.modal-footer {
   flex-shrink: 0;
   margin-top: 16px;
   padding-top: 12px;
