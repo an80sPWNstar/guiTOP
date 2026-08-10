@@ -231,6 +231,7 @@ only the numbers and bar widths change per tick.
 | `curl localhost:17580/debug/gauges` | Gauges skin geometry dump |
 | `curl localhost:17580/debug/corvette` | Corvette skin geometry dump |
 | `curl localhost:17580/debug/claude-config` | Opens the Claude accounts modal, reports display + row count |
+| `curl localhost:17580/debug/claude-setup` | Drives the first-run Claude prompt: enable → Set up → cswap, reports each step |
 | `curl localhost:17580/debug/settings` | Opens Settings, reports whether it fits the window and Close is on screen |
 | `curl localhost:17580/debug/settings/dismiss` | Toggles a setting, clicks the backdrop, reports whether it reverted |
 | `curl localhost:17580/debug/claude-config/dismiss` | Opens the ⚙ accounts dialog, real-clicks outside, reports fit + close |
@@ -330,6 +331,11 @@ Current test suites:
 *   `GET /debug/gauges` and `GET /debug/corvette`: Dump per-skin element geometry, for checking a layout at a given window size without eyeballing a screenshot.
 *   `GET /debug/claude-config`: Despite the name, this *drives* the UI rather than reporting state — it clicks the Claude accounts button and reports whether the modal opened and how many account rows it holds.
 *   `GET /debug/settings`: Also drives the UI. Settings has no in-app button, so this sends the same `open-settings` message the tray does, then reports the card and viewport rectangles, whether the card fits, whether Close is on screen, and whether the scroll region has more content than it shows. Resize first (`/resize?w=&h=`) to test a size.
+*   `GET /debug/claude-setup`: Also drives the UI, and resets the state it needs first — it clears
+    the seen flag, forces the dock to `off`, then clicks the toggle, `Set up` and
+    `Multiple accounts (cswap)` in turn, reporting what each step produced. The dialog only ever
+    appears on a machine with no cswap and no claude.ai session, which is never the development
+    machine, so this is the only way to exercise it without hand-editing localStorage.
 *   `GET /debug/settings/dismiss`: Drives the discard-on-backdrop path end to end — flips `minimizeToTray` through the real checkbox, clicks inside the card, then clicks the backdrop, and reports whether the write-through happened, whether the inside click left the dialog open, and whether the setting came back. Leaves the setting as it found it.
 
 ## Modals

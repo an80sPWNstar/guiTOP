@@ -644,6 +644,37 @@ app.whenReady().then(() => {
       })()`)
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ ok: true, info }))
+    } else if (req.url === '/debug/claude-setup' && win && !win.isDestroyed()) {
+      // Drives the first-run prompt the whole way: the dialog only appears on a
+      // machine with nothing configured, which is exactly the machine nobody
+      // develops on, so eyeballing it locally proves nothing.
+      const info = await win.webContents.executeJavaScript(`(() => {
+        try {
+          localStorage.removeItem('guitop-claude-setup-seen')
+          if (state.claudeDock !== 'off') {
+            state.claudeDock = 'off'
+            localStorage.setItem('guitop-claude-dock', 'off')
+            renderClaudeStrip()
+          }
+          document.getElementById('claude-toggle').click()
+          const modal = document.getElementById('claude-setup-modal')
+          const opened = modal.style.display
+          document.getElementById('cs-setup').click()
+          const choosing = document.getElementById('cs-step-choose').style.display
+          document.getElementById('cs-pick-cswap').click()
+          const missing = document.getElementById('cs-cswap-missing')
+          return {
+            opened,
+            choosing,
+            missingShown: missing.style.display === 'block',
+            missingText: missing.textContent,
+            configOpened: document.getElementById('claude-config-modal').style.display,
+            swapOk: state.claudeSwap ? !!state.claudeSwap.ok : null,
+          }
+        } catch (e) { return { error: e.message + '\\n' + e.stack } }
+      })()`)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, info }, null, 2))
     } else if (req.url.startsWith('/debug/hosts/dismiss') && win && !win.isDestroyed()) {
       const q = new URL(req.url, 'http://x').searchParams
       const x = Number(q.get('x') || 60)
