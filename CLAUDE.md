@@ -82,9 +82,18 @@ guiTOP/
 - **Widget**: `renderClaudeStrip()` in renderer.js. Dock cycles top → bottom → off.
 - **Empty state**: with no cswap and no usage payload there are no account rows, so the whole
   strip is hidden rather than docked as a brand label over an empty bar. `update()` returns
-  whether it drew any rows and the caller sets the dock container's display from that. The dock
-  is `top` by default, so without this a machine with no cswap — a Pi, any Linux tester's box —
-  opens with a dead bar across the top of the window.
+  whether it drew any rows and the caller sets the dock container's display from that.
+- **The dock defaults to `off`**, so a fresh install draws no strip at all. Switching it on for
+  the first time is the one moment the user has asked for this data, so that is where the setup
+  prompt fires — `#claude-setup-modal`, intro then a two-way choice: cswap for multiple accounts,
+  or a claude.ai sign-in, each routing into the dialog that already exists. Picking cswap when
+  the last poll came back `ok: false` reports the install line instead, since the add forms would
+  only fail. A null swap payload means the first poll has not landed and is not evidence of
+  anything, so the dialog opens anyway.
+- **The prompt is asked once and never when the answer is already known.** `claudeConfigured()`
+  is true for a cswap account or a usage payload that answered, and any payload satisfying it
+  sets `guitop-claude-setup-seen` — so a machine that already has a session never sees the
+  dialog, whatever the user does with the dock. Every way out of the dialog sets the same flag.
 - **Dev endpoint**: `GET /claude/toggle` — cycles dock position.
 - **AUTO chip**: `cswap auto` is a foreground loop with no daemon, pidfile or lockfile, so the only way to know it runs is to look for the process. `detectAuto()` in `claude-swap.js` matches the COMMAND LINE, never the process name: `uv`-installed tools run as `python.exe` with the shim path in their arguments. Windows uses one `Get-CimInstance Win32_Process` call (~230 ms), other platforms use `pgrep -af cswap`, which reports no start time so `autoSinceMin` is null there. A detection that cannot run reports "not detected" rather than an error.
 

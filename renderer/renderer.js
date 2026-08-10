@@ -3,6 +3,7 @@
 // Force-close any modals that Chromium's session restore may have left open
 document.getElementById('manage-hosts-modal').style.display = 'none'
 document.getElementById('claude-config-modal').style.display = 'none'
+document.getElementById('claude-setup-modal').style.display = 'none'
 
 const state = {
   hosts: [],
@@ -11,7 +12,10 @@ const state = {
   procsVisible: {},  // { [hostLabel]: bool }
   procSort: { col: null, asc: false },  // null = unsorted, asc false = descending first
   skin: localStorage.getItem('guitop-skin') || 'bars',
-  claudeDock: localStorage.getItem('guitop-claude-dock') || 'top',  // top | bottom | off
+  // Off until asked for. Most machines have no cswap and no claude.ai session,
+  // and a dock that draws nothing is worse than no dock; switching it on is what
+  // starts the setup prompt below.
+  claudeDock: localStorage.getItem('guitop-claude-dock') || 'off',  // top | bottom | off
   claudeUsage: null,
   claudeSwap: null,
 }
@@ -178,6 +182,77 @@ claudeConfigModal.addEventListener('click', (e) => {
   if (e.target === claudeConfigModal) claudeConfigModal.style.display = 'none'
 })
 
+// ── First-run Claude setup prompt ───────────────
+// Asked once, and only when the app cannot already see a source. A detected
+// account or a working claude.ai session answers the question by itself, so the
+// flag is set from the payloads too and the dialog never appears at all.
+const SETUP_SEEN_KEY = 'guitop-claude-setup-seen'
+const claudeSetupModal = document.getElementById('claude-setup-modal')
+const csStepIntro = document.getElementById('cs-step-intro')
+const csStepChoose = document.getElementById('cs-step-choose')
+const csMissing = document.getElementById('cs-cswap-missing')
+
+function claudeSetupSeen() { return localStorage.getItem(SETUP_SEEN_KEY) === '1' }
+function markClaudeSetupSeen() { localStorage.setItem(SETUP_SEEN_KEY, '1') }
+
+// A cswap account or a usage payload that actually answered means there is
+// something to show. claudeSwap.ok with an empty account list does not count:
+// cswap is installed but holds nothing yet.
+function claudeConfigured() {
+  const swap = state.claudeSwap
+  if (swap && swap.ok && Array.isArray(swap.accounts) && swap.accounts.length > 0) return true
+  return !!(state.claudeUsage && state.claudeUsage.ok)
+}
+
+function noteClaudeConfigured() {
+  if (claudeConfigured()) markClaudeSetupSeen()
+}
+
+function openClaudeSetup() {
+  csStepIntro.style.display = 'block'
+  csStepChoose.style.display = 'none'
+  csMissing.style.display = 'none'
+  claudeSetupModal.style.display = 'flex'
+}
+
+// Any way out is an answer, so the prompt does not return on the next toggle.
+function closeClaudeSetup() {
+  claudeSetupModal.style.display = 'none'
+  markClaudeSetupSeen()
+}
+
+document.getElementById('cs-not-now').addEventListener('click', closeClaudeSetup)
+document.getElementById('cs-cancel').addEventListener('click', closeClaudeSetup)
+claudeSetupModal.addEventListener('click', (e) => {
+  if (e.target === claudeSetupModal) closeClaudeSetup()
+})
+
+document.getElementById('cs-setup').addEventListener('click', () => {
+  csStepIntro.style.display = 'none'
+  csStepChoose.style.display = 'block'
+})
+
+// Only claim cswap is missing when a poll has actually come back and failed.
+// A null payload means the first poll has not landed yet, which is not evidence
+// of anything -- open the dialog and let its own buttons report the truth.
+document.getElementById('cs-pick-cswap').addEventListener('click', () => {
+  const swap = state.claudeSwap
+  if (swap && !swap.ok) {
+    csMissing.textContent = 'cswap not found. Install it with:  uv tool install cswap  — then reopen this dialog.'
+    csMissing.style.display = 'block'
+    return
+  }
+  closeClaudeSetup()
+  ccShowStatus('', false)
+  renderAccountRows()
+  claudeConfigModal.style.display = 'flex'
+})
+
+document.getElementById('cs-pick-oauth').addEventListener('click', async () => {
+  closeClaudeSetup()
+  await openSettings()
+})
+
 // ── Settings modal ──────────────────────────────
 const settingsModal = document.getElementById('settings-modal')
 settingsModal.style.display = 'none' // guard: never auto-open on launch
@@ -255,13 +330,18 @@ async function updateClaudeWebUI() {
 const SETTINGS_KEYS = ['launchAtStartup', 'minimizeToTray', 'useOAuthClaude']
 let settingsSnapshot = null
 
-window.guiTOP.onOpenSettings(async () => {
+// Opened from the tray, from Ctrl+, and from the first-run setup prompt, so the
+// snapshot-then-show sequence lives in one place -- a dialog shown without a
+// snapshot would have nothing to revert to on a backdrop click.
+async function openSettings() {
   const s = await window.guiTOP.getSettings()
   settingsSnapshot = {}
   for (const k of SETTINGS_KEYS) settingsSnapshot[k] = !!s[k]
   await loadSettingsUI()
   settingsModal.style.display = 'flex'
-})
+}
+
+window.guiTOP.onOpenSettings(openSettings)
 
 function closeSettings() {
   settingsModal.style.display = 'none'
@@ -374,18 +454,26 @@ document.getElementById('cc-add-current-btn').addEventListener('click', async ()
 
 claudeBtn.addEventListener('click', () => {
   const order = ['top', 'bottom', 'off']
+  const wasOff = state.claudeDock === 'off'
   state.claudeDock = order[(order.indexOf(state.claudeDock) + 1) % order.length]
   localStorage.setItem('guitop-claude-dock', state.claudeDock)
   renderClaudeStrip()
+
+  // Switching the strip on for the first time with nothing behind it is the one
+  // moment the user has said they want this data, so it is the only moment worth
+  // asking. Every later toggle is silent.
+  if (wasOff && !claudeSetupSeen() && !claudeConfigured()) openClaudeSetup()
 })
 
 window.guiTOP.onClaudeUsage((payload) => {
   state.claudeUsage = payload
+  noteClaudeConfigured()
   renderClaudeStrip()
 })
 
 window.guiTOP.onClaudeSwap((payload) => {
   state.claudeSwap = payload
+  noteClaudeConfigured()
   renderClaudeStrip()
   if (claudeConfigModal.style.display !== 'none') renderAccountRows()
 })

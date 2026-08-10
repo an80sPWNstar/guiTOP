@@ -70,6 +70,43 @@
     </div>
   </div>
 
+  <!-- Shown once, the first time the strip is switched on while nothing is
+       configured. A machine that already has a cswap account or a claude.ai
+       session never sees it: the app can tell, so it does not ask. -->
+  <div id="claude-setup-modal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-title">Set up Claude usage?</div>
+
+      <div id="cs-step-intro">
+        <div class="dim-note">guiTOP can show your Claude token usage — session and week meters, one row per account.</div>
+        <div class="modal-buttons">
+          <button id="cs-not-now" class="modal-btn cancel">Not now</button>
+          <button id="cs-setup" class="modal-btn submit">Set up</button>
+        </div>
+      </div>
+
+      <div id="cs-step-choose">
+        <div class="modal-label set-heading">How do you want to track usage?</div>
+
+        <div class="modal-buttons">
+          <button id="cs-pick-cswap" class="modal-btn submit modal-btn-block">Multiple accounts (cswap)</button>
+        </div>
+        <div class="dim-note set-status">Swap between accounts, one meter row each. Needs the cswap CLI.</div>
+
+        <div class="modal-buttons">
+          <button id="cs-pick-oauth" class="modal-btn submit modal-btn-block">Sign in to claude.ai</button>
+        </div>
+        <div class="dim-note set-status">Single account, no CLI needed.</div>
+
+        <div id="cs-cswap-missing" class="modal-error modal-status-slot"></div>
+
+        <div class="modal-buttons modal-footer">
+          <button id="cs-cancel" class="modal-btn cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="manage-hosts-modal" class="modal-overlay" style="display:none">
     <div class="modal-card modal-card-tall">
       <div class="modal-title">Manage Hosts</div>
