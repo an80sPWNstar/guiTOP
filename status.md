@@ -2,22 +2,64 @@
 
 _Last updated: 2026-08-09. Read this + `CLAUDE.md` once at session start._
 
-## RESUME HERE — 2026-08-09 (v0.3.11 pushed, Linux builds still blocked)
+## RESUME HERE — 2026-08-10 (three releases out; PR #2 is the next job)
 
-**Reboot in progress to enable SVM in BIOS.** That is the only thing standing between here and a
-release. WSL will not start until it is on (`HCS_E_HYPERV_NOT_INSTALLED` / "virtualization is not
-enabled"), and WSL is where every Linux and ARM artifact is built.
+**Nothing is blocked and nothing is half-finished.** main is `3b0dd57`, in sync with origin. Tags
+v0.3.11, v0.3.12 and v0.3.13 are pushed, each with a GitHub release carrying all 7 installers
+(Windows exe + AppImage and deb for x64, arm64, armv7l). Tests 11/11 on Windows and in WSL. No open
+issues.
 
-**After the reboot, in order:**
-1. Confirm `wsl -e echo ok` works.
-2. `npm run build:linux`, then `npm run build:linux:arm64` and `npm run build:linux:armv7l` (the
-   ARM targets came in with PR #1 and were verified on a Pi 5 by its author).
-3. Restore Windows modules afterwards: `powershell.exe -Command 'npm install'`.
-4. Tag and cut ONE GitHub release folding in 0.3.9, 0.3.10 and 0.3.11 — ask Bryan first, it
-   publishes artifacts. This is what actually gets builds to the friend testing on Pi/Arch; a
-   Windows exe is no use to them.
+**First thing next session: review PR #2** (apollo-mg, opened 2026-08-10 00:54Z) —
+`fix(amd): name consumer Radeons instead of showing their PCI device ID`, +246/−2 in 4 files,
+branched off main, no overlap with the merged #1.
 
-**Shipped this session (all pushed, `f6e27ea..bdd1a2b`):**
+- The bug is real and is in the 0.3.13 build they are testing: `product_name` is an Instinct/Pro
+  sysfs field that consumer Radeons do not have (absent, not empty), so an RX 9070 XT is labelled
+  **"AMD GPU 7550"** from the `PCI_ID=1002:7550` fallback.
+- No device-id table can fix it — `1002:7550` covers the RX 9070, 9070 XT and 9070 GRE. `rocm-smi`
+  is the only thing on the box that knows the board, via `Card Series`.
+- Their fix keeps `PCI Bus` in `parseRocmSmi` (already read, then discarded) and joins rocm-smi
+  cards to sysfs cards **on the bus** — not on `cardN`, not on array position, because DRM
+  numbering is sparse and their only GPU is at `card1` while rocm-smi calls it `card0`. That is the
+  same trap `amd-sysfs.js` already carries a comment about.
+- **Verify, do not take on description:** it changes the `rocm-smi` flag set, and that is the code
+  path that aborted inside `get_od_clk_volt_info` on ROCm 7.2. Confirm the new flags
+  (`--showproductname --showbus`) stay clear of the overdrive table, and that `commands.test.js` /
+  `real-hardware.test.js` still pin it.
+- Merging it means a 0.3.14 and a fresh set of installers, since a fix apollo-mg cannot install
+  does them no good.
+
+**Still untested by anyone: the arm64 and armv7l builds.** They compile and are published, but no
+ARM hardware has run them. apollo-mg's Pi 5 is the first trial.
+
+**Shipped 2026-08-09 → 08-10, in three releases:**
+- **v0.3.13** — Claude usage strip **off by default**; switching it on the first time raises a
+  setup prompt (`#claude-setup-modal`): intro, then cswap for multiple accounts or a claude.ai
+  sign-in, each routing into the dialog that already exists. Picking cswap when the last poll
+  returned `ok: false` reports `uv tool install cswap` instead of opening forms that would fail.
+  Asked **once** — every exit sets `guitop-claude-setup-seen`, and a machine that already has an
+  account or a working session is never asked at all. Bryan confirmed once-only is what he wants;
+  do not make it nag. New `/debug/claude-setup` drives the whole sequence, because the dialog is
+  unreachable on any machine that has accounts — which is every machine we develop on.
+- **v0.3.12** — an empty strip is hidden entirely rather than docked as a bare `CLAUDE USAGE` label
+  over an empty bar. Found only because Bryan questioned a screenshot I had already explained away.
+- **v0.3.11** — the backlog release, folding in 0.3.5–0.3.11 (the last public release had been
+  v0.3.4, not 0.3.8 as the old handoff claimed).
+
+**Verified on .70 with `~/.config/guiTOP` wiped**, not reasoned about: no strip on first launch
+(`stripsInDom: 0`), the prompt appears on first enable, and picking cswap reports
+`swapOk: false, missingShown: true, configOpened: "none"`.
+
+**Two process lessons from that night:**
+- A Haiku subagent is reliable for single mechanical commands (builds, scp, size listings) and was
+  **not** reliable for a multi-step UI drive — its run made it look like the prompt never fired,
+  and running the same steps by hand showed it fires correctly. When the sequence is the thing
+  under test, drive it directly or collapse it into one debug endpoint.
+- Local-LLM review of a code excerpt needs one extra line saying identifiers declared elsewhere in
+  the file are in scope. Without it, 17 of 17 findings were "X is not defined". With it, 8 findings
+  and 0 real.
+
+**Shipped 2026-08-09 earlier (all pushed, `f6e27ea..bdd1a2b`):**
 - **PR #1 merged** (apollo-mg): remote commands now run under `sh -c` at the single `conn.exec`
   chokepoint, because ssh runs the command string under the remote user's LOGIN shell and fish
   cannot parse `for ...; do ... done` — a healthy host reported as down. Plus `npmRebuild: false`,
