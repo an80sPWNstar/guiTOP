@@ -1,36 +1,29 @@
 # guiTOP — Session Handoff
 
-_Last updated: 2026-08-09. Read this + `CLAUDE.md` once at session start._
+_Last updated: 2026-08-11. Read this + `CLAUDE.md` once at session start._
 
-## RESUME HERE — 2026-08-10 (three releases out; PR #2 is the next job)
+## RESUME HERE — 2026-08-11 (PR #2 merged, v0.3.14 released; nothing queued)
 
-**Nothing is blocked and nothing is half-finished.** main is `3b0dd57`, in sync with origin. Tags
-v0.3.11, v0.3.12 and v0.3.13 are pushed, each with a GitHub release carrying all 7 installers
-(Windows exe + AppImage and deb for x64, arm64, armv7l). Tests 11/11 on Windows and in WSL. No open
-issues.
+**Nothing is blocked and nothing is half-finished.** main is `aefc107` (merge `db5d728` + the
+version-bump commit), in sync with origin. Tag v0.3.14 is pushed with a GitHub release carrying
+all 7 installers (Windows exe + AppImage and deb for x64, arm64, armv7l). Tests 12/12 on Windows
+and in WSL. No open PRs or issues.
 
-**First thing next session: review PR #2** (apollo-mg, opened 2026-08-10 00:54Z) —
-`fix(amd): name consumer Radeons instead of showing their PCI device ID`, +246/−2 in 4 files,
-branched off main, no overlap with the merged #1.
-
-- The bug is real and is in the 0.3.13 build they are testing: `product_name` is an Instinct/Pro
-  sysfs field that consumer Radeons do not have (absent, not empty), so an RX 9070 XT is labelled
-  **"AMD GPU 7550"** from the `PCI_ID=1002:7550` fallback.
-- No device-id table can fix it — `1002:7550` covers the RX 9070, 9070 XT and 9070 GRE. `rocm-smi`
-  is the only thing on the box that knows the board, via `Card Series`.
-- Their fix keeps `PCI Bus` in `parseRocmSmi` (already read, then discarded) and joins rocm-smi
-  cards to sysfs cards **on the bus** — not on `cardN`, not on array position, because DRM
-  numbering is sparse and their only GPU is at `card1` while rocm-smi calls it `card0`. That is the
-  same trap `amd-sysfs.js` already carries a comment about.
-- **Verify, do not take on description:** it changes the `rocm-smi` flag set, and that is the code
-  path that aborted inside `get_od_clk_volt_info` on ROCm 7.2. Confirm the new flags
-  (`--showproductname --showbus`) stay clear of the overdrive table, and that `commands.test.js` /
-  `real-hardware.test.js` still pin it.
-- Merging it means a 0.3.14 and a fresh set of installers, since a fix apollo-mg cannot install
-  does them no good.
+**PR #2 (apollo-mg, AMD consumer card names) was reviewed, merged and shipped as v0.3.14.**
+- Review held up: the PCI-bus join is correct against sparse DRM numbering, `enrich()` cannot
+  throw or take a host offline, and the new `ROCM_NAME_CMD` (`--showproductname --showbus`)
+  stays clear of the `get_od_clk_volt_info` abort path. The PR branch's one failing test file
+  was a stale base (it predates ca2ed4c's `/bin/sh` skip); merged with main everything passes.
+- Added on top in `aefc107`: `real-hardware.test.js` now pins `ROCM_NAME_CMD` off
+  `--showallinfo`/clock flags and shell metacharacters, same guard the main query carries.
+- x64 AppImage smoke-tested on .70 under xvfb (app up, `/screenshot` answered, cleaned up).
+  The AMD path itself was verified by apollo-mg on the real RX 9070 XT.
+- Thanks + release link posted on the PR. Their offered follow-up — a `pci.ids` fallback for
+  amdgpu-without-ROCm hosts — was declined for now; revisit if a no-ROCm rig report arrives.
 
 **Still untested by anyone: the arm64 and armv7l builds.** They compile and are published, but no
-ARM hardware has run them. apollo-mg's Pi 5 is the first trial.
+ARM hardware has run them. apollo-mg's Pi 5 is the first trial. The `amd-smi` parser has also
+still never run against real hardware (needs an Instinct or ROCm 6 box).
 
 **Shipped 2026-08-09 → 08-10, in three releases:**
 - **v0.3.13** — Claude usage strip **off by default**; switching it on the first time raises a
