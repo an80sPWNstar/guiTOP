@@ -76,6 +76,14 @@ eq('still asks for vram', amdSmi.ROCM_CMD.includes('--showmeminfo') === true, tr
 eq('still json', amdSmi.ROCM_CMD.includes('--json') === true, true)
 eq('no shell metacharacters', /[;&|`$]/.test(amdSmi.ROCM_CMD) === false, true)
 
+// The name probe runs the same binary, so it is bound by the same crash path.
+eq('name probe avoids --showallinfo', amdSmi.ROCM_NAME_CMD.includes('--showallinfo') === false, true)
+eq('name probe avoids clock flags', /--showclocks|--showclkvolt/.test(amdSmi.ROCM_NAME_CMD) === false, true)
+eq('name probe asks for product name', amdSmi.ROCM_NAME_CMD.includes('--showproductname') === true, true)
+eq('name probe asks for bus', amdSmi.ROCM_NAME_CMD.includes('--showbus') === true, true)
+eq('name probe still json', amdSmi.ROCM_NAME_CMD.includes('--json') === true, true)
+eq('name probe has no shell metacharacters', /[;&|`$]/.test(amdSmi.ROCM_NAME_CMD) === false, true)
+
 console.log('real hardware (RX 9070 XT, rocm-smi narrowed flags):')
 
 // Verbatim stdout of ROCM_CMD on that machine. Note rocm-smi calls the card
