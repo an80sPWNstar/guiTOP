@@ -52,11 +52,23 @@ function validate(entry, i) {
   return result
 }
 
-function loadHosts(arr) {
-  if (!Array.isArray(arr) || arr.length === 0) {
-    throw new Error('hosts config must be a non-empty array')
+// A hand-edited hosts.json can hold an entry validate() rejects. Throwing here used to
+// abort startup with a modal error box that blocks the main thread, so a bad entry is
+// set aside and reported instead, and the rest still load.
+function partitionHosts(arr) {
+  if (!Array.isArray(arr)) {
+    return { hosts: [], invalid: [{ index: -1, raw: arr, error: 'hosts config must be an array' }] }
   }
-  return arr.map(validate)
+  const hosts = []
+  const invalid = []
+  for (let i = 0; i < arr.length; i++) {
+    try {
+      hosts.push(validate(arr[i], i))
+    } catch (err) {
+      invalid.push({ index: i, raw: arr[i], error: err.message })
+    }
+  }
+  return { hosts, invalid }
 }
 
 const DEFAULT_HOSTS = [
@@ -96,7 +108,7 @@ function saveKnownHost(userDataDir, hostKey, fingerprint) {
 }
 
 module.exports = {
-  loadHosts, validate, DEFAULT_HOSTS,
+  partitionHosts, validate, DEFAULT_HOSTS,
   loadSavedHosts, saveHostList,
   loadKnownHosts, saveKnownHost,
 }

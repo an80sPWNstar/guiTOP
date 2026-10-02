@@ -862,6 +862,22 @@ body.skin-corvette .hm-val {
   font-variant-numeric: tabular-nums;
 }
 
+#status-text {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* A hosts.json entry that failed validation; long messages truncate, the title holds them whole. */
+.status-warn {
+  margin-left: auto;
+  padding-left: var(--gap);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-warning);
+}
+
 /* ── Skin selector ───────────────────────────── */
 .skin-select {
   -webkit-app-region: no-drag;

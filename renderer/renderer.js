@@ -686,6 +686,7 @@ document.getElementById('single-procs').addEventListener('click', (e) => {
 
 // ── Data subscription ───────────────────────────
 const statusText = document.getElementById('status-text')
+const statusWarn = document.getElementById('status-warn')
 let lastTs = 0
 
 window.guiTOP.onData((payload) => {
@@ -702,6 +703,19 @@ window.guiTOP.onHostList((hosts) => {
   state.hosts = hosts
   updateHostSelect()
   renderActive()
+})
+
+// Entries hosts.json holds but that failed validation. They are not polled, and are
+// shown here because a skipped host would otherwise just be missing with no reason.
+window.guiTOP.onHostErrors((errors) => {
+  if (errors.length === 0) {
+    statusWarn.hidden = true
+    statusWarn.textContent = ''
+  } else {
+    statusWarn.hidden = false
+    statusWarn.textContent = `hosts.json: skipped ${errors.join(' · ')}`
+    statusWarn.title = errors.join('\n')
+  }
 })
 
 // Fetch host list on load (in case the event was missed)

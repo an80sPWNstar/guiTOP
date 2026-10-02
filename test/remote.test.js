@@ -169,6 +169,25 @@ async function main() {
   }
   ok('agent host with a bad username is rejected', validationErr8 && validationErr8.message && validationErr8.message.includes('username'))
 
+  // 13. partitionHosts sets bad entries aside instead of throwing.
+  const mixed = [
+    { label: 'good', host: '10.0.0.1', username: 'u' },
+    { label: 'nouser', host: '10.0.0.2', transport: 'stream' },
+    { label: 'local', host: '127.0.0.1', local: true },
+  ]
+  let parts = null
+  try { parts = hostConfig.partitionHosts(mixed) } catch (e) { parts = null }
+  ok('partitionHosts does not throw on a bad entry', parts !== null)
+  eq('partitionHosts keeps the good hosts', parts && parts.hosts.length, 2)
+  eq('partitionHosts keeps their order', parts && parts.hosts.map(h => h.label).join(','), 'good,local')
+  eq('partitionHosts reports one bad entry', parts && parts.invalid.length, 1)
+  eq('bad entry keeps its index', parts && parts.invalid[0].index, 1)
+  ok('bad entry keeps its raw object', parts && parts.invalid[0].raw === mixed[1])
+  ok('bad entry carries the validate message', parts && /username/.test(parts.invalid[0].error))
+  const notArr = hostConfig.partitionHosts({ label: 'x' })
+  eq('non-array config loads no hosts', notArr.hosts.length, 0)
+  eq('non-array config is reported', notArr.invalid.length, 1)
+
   // 11. Keys are only included when present.
   const testHost5 = { label: 'test5', host: '10.0.0.5', port: 22, username: 'user', password: 'pass' }
   const validated5 = hostConfig.validate(testHost5, [])

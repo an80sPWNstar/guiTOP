@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('guiTOP', {
   onClaudeUsage: (cb) => ipcRenderer.on('claude-usage', (_e, data) => cb(data)),
   onClaudeSwap: (cb) => ipcRenderer.on('claude-swap', (_e, data) => cb(data)),
   onHostList: (cb) => ipcRenderer.on('host-list', (_e, hosts) => cb(hosts)),
+  onHostErrors: (cb) => ipcRenderer.on('host-errors', (_e, errors) => cb(errors)),
   onOpenSettings: (cb) => ipcRenderer.on('open-settings', () => cb()),
   getHosts: () => ipcRenderer.invoke('get-hosts'),
   addHost: (config) => ipcRenderer.invoke('add-host', config),

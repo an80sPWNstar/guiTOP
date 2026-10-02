@@ -5,7 +5,7 @@ const fs = require('fs')
 const path = require('path')
 const { execFile, spawn } = require('child_process')
 const {
-  loadHosts, validate, DEFAULT_HOSTS,
+  partitionHosts, validate, DEFAULT_HOSTS,
   loadSavedHosts, saveHostList,
   loadKnownHosts, saveKnownHost,
 } = require('./src/config/hosts')
@@ -46,6 +46,8 @@ let tray = null
 let isQuitting = false
 const activeHosts = []     // validated host entries
 const rawHosts = []        // raw configs (for persistence — no passwords)
+const invalidRawHosts = [] // hosts.json entries that failed validation, kept so a save does not drop them
+const hostErrors = []      // one message per invalid entry, shown in the status bar
 const hostHandles = {}     // { label: stopHandle }
 const hostPasswords = {}   // { label: password } — in memory only, never persisted
 const hostAgentTokens = {} // { label: agentToken } — in memory only, never persisted
@@ -210,12 +212,18 @@ function createWindow() {
     // Always refresh local host label to current hostname
     const currentHostname = os.hostname()
     for (const entry of initial) {
-      if (entry.local) entry.label = currentHostname
+      if (entry && entry.local) entry.label = currentHostname
     }
 
-    const hosts = loadHosts(initial)
+    const { hosts, invalid } = partitionHosts(initial)
+    for (const bad of invalid) {
+      const name = bad.raw && typeof bad.raw.label === 'string' ? `"${bad.raw.label}" ` : ''
+      hostErrors.push(`${name}(${bad.error})`)
+      console.error(`guiTOP: skipped host ${name}(${bad.error})`)
+    }
 
-    rawHosts.push(...initial)
+    rawHosts.push(...initial.filter((_, i) => !invalid.some(b => b.index === i)))
+    invalidRawHosts.push(...invalid.map(b => b.raw))
     activeHosts.push(...hosts)
 
     // Restore encrypted passwords and agent tokens from saved host entries
@@ -250,10 +258,11 @@ function createWindow() {
         sealed = true
       }
     }
-    if (sealed) saveHostList(app.getPath('userData'), rawHosts)
+    if (sealed) saveHostList(app.getPath('userData'), rawHosts.concat(invalidRawHosts))
 
     for (const h of hosts) startCollector(h)
     broadcastHostList()
+    win.webContents.send('host-errors', hostErrors)
 
     // Apply saved settings before starting collectors
     const settings = loadSettings()
@@ -428,7 +437,7 @@ ipcMain.handle('add-host', async (_e, config) => {
   rawHosts.push(hostData)
   activeHosts.push(entry)
   startCollector(entry)
-  saveHostList(app.getPath('userData'), rawHosts)
+  saveHostList(app.getPath('userData'), rawHosts.concat(invalidRawHosts))
   broadcastHostList()
   return { ok: true, label: entry.label }
 })
@@ -447,7 +456,7 @@ ipcMain.handle('edit-host', async (_e, label, config) => {
       const rawIdx = rawHosts.findIndex(r => r.label === label)
       if (rawIdx !== -1) {
         rawHosts[rawIdx].encryptedPassword = safeStorage.encryptString(password).toString('base64')
-        saveHostList(app.getPath('userData'), rawHosts)
+        saveHostList(app.getPath('userData'), rawHosts.concat(invalidRawHosts))
       }
     }
   }
@@ -459,7 +468,7 @@ ipcMain.handle('edit-host', async (_e, label, config) => {
       const rawIdx = rawHosts.findIndex(r => r.label === label)
       if (rawIdx !== -1) {
         rawHosts[rawIdx].encryptedAgentToken = safeStorage.encryptString(agentToken).toString('base64')
-        saveHostList(app.getPath('userData'), rawHosts)
+        saveHostList(app.getPath('userData'), rawHosts.concat(invalidRawHosts))
       }
     }
   }
@@ -486,7 +495,7 @@ ipcMain.handle('remove-host', (_e, label) => {
 
   activeHosts.splice(idx, 1)
   rawHosts.splice(idx, 1)
-  saveHostList(app.getPath('userData'), rawHosts)
+  saveHostList(app.getPath('userData'), rawHosts.concat(invalidRawHosts))
   broadcastHostList()
   return { ok: true }
 })
