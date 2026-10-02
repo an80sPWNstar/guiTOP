@@ -4,7 +4,7 @@
 const os = require('os')
 const { fetchLocal, GPU_CMD, PROC_CMD } = require('./nvidia-smi')
 const { parseGpus, parseProcesses, parsePs } = require('./parse')
-const { execRemote } = require('./ssh')
+const ssh = require('./ssh')
 const vendor = require('./vendor')
 const hostStats = require('./host-stats')
 const amdSmi = require('./amd-smi')
@@ -21,6 +21,35 @@ const winProcStats = process.platform === 'win32' ? require('./win-proc-stats') 
 const PS_EO_CMD = 'ps -eo pid=,user:32=,pcpu=,pmem=,etimes='
 
 const DEFAULT_INTERVAL = 1000
+const REMOTE_INTERVAL = 2000
+
+// Runs `tick` repeatedly with `intervalMs` of rest between the END of one run
+// and the START of the next. Never overlaps: a slow tick delays the next one.
+// The first tick is deferred (setImmediate) so the caller holds the handle
+// before it fires. A tick that throws or rejects is swallowed and the loop
+// continues. stop() is idempotent; a tick already in flight finishes, and no
+// further tick is scheduled.
+function runLoop(tick, intervalMs) {
+  let stopped = false
+  let timer = null
+
+  async function run() {
+    if (stopped) return
+
+    try { await tick() } catch (_) {}
+    if (!stopped) timer = setTimeout(run, intervalMs)
+  }
+
+  timer = setTimeout(run, 0)
+
+  return {
+    stop() {
+      stopped = true
+      if (timer) { clearTimeout(timer); clearImmediate(timer) }
+      timer = null
+    },
+  }
+}
 
 async function pollLocalNvidia() {
   const { gpuCsv, procCsv } = await fetchLocal()
@@ -47,9 +76,9 @@ async function pollLocalNvidia() {
 
 async function pollRemoteNvidia(hostConfig) {
   const [gpuCsv, procCsv, psOut] = await Promise.all([
-    execRemote(hostConfig, GPU_CMD),
-    execRemote(hostConfig, PROC_CMD),
-    execRemote(hostConfig, PS_EO_CMD).catch(() => ''),
+    ssh.execRemote(hostConfig, GPU_CMD),
+    ssh.execRemote(hostConfig, PROC_CMD),
+    ssh.execRemote(hostConfig, PS_EO_CMD).catch(() => ''),
   ])
   const gpus = parseGpus(gpuCsv)
   const uuidMap = {}
@@ -82,10 +111,10 @@ function attachPsStats(processes, psOut) {
 
 async function pollRemoteAmdSmi(hostConfig) {
   const [staticOut, metricOut, procOut, psOut] = await Promise.all([
-    execRemote(hostConfig, amdSmi.STATIC_CMD),
-    execRemote(hostConfig, amdSmi.METRIC_CMD),
-    execRemote(hostConfig, amdSmi.PROC_CMD).catch(() => ''),
-    execRemote(hostConfig, PS_EO_CMD).catch(() => ''),
+    ssh.execRemote(hostConfig, amdSmi.STATIC_CMD),
+    ssh.execRemote(hostConfig, amdSmi.METRIC_CMD),
+    ssh.execRemote(hostConfig, amdSmi.PROC_CMD).catch(() => ''),
+    ssh.execRemote(hostConfig, PS_EO_CMD).catch(() => ''),
   ])
   const gpus = amdSmi.parseAmdSmi(staticOut, metricOut)
   const uuidMap = {}
@@ -95,7 +124,7 @@ async function pollRemoteAmdSmi(hostConfig) {
 }
 
 async function pollRemoteRocmSmi(hostConfig) {
-  const out = await execRemote(hostConfig, amdSmi.ROCM_CMD)
+  const out = await ssh.execRemote(hostConfig, amdSmi.ROCM_CMD)
   return { gpus: amdSmi.parseRocmSmi(out), processes: [] }
 }
 
@@ -103,7 +132,7 @@ async function pollRemoteRocmSmi(hostConfig) {
 // by device ID. enrich() fills those in from rocm-smi, once per host, and is a
 // no-op when every card already has a real name.
 async function pollRemoteAmdSysfs(hostConfig) {
-  const out = await execRemote(hostConfig, amdSysfs.SYSFS_CMD)
+  const out = await ssh.execRemote(hostConfig, amdSysfs.SYSFS_CMD)
   return amdNames.enrich(hostConfig, { gpus: amdSysfs.parseSysfs(out), processes: [] })
 }
 
@@ -230,8 +259,9 @@ async function pollHost(hostEntry, state) {
   return merged
 }
 
-function startHost(hostEntry, onData, { interval = DEFAULT_INTERVAL, useMock = false, mockVendor = 'nvidia' } = {}) {
-  let timer = null
+function startHost(hostEntry, onData, { interval, useMock = false, mockVendor = 'nvidia' } = {}) {
+  if (interval == null) interval = hostEntry.local ? DEFAULT_INTERVAL : REMOTE_INTERVAL
+
   let running = true
 
   // Which backend won each slot on this host, plus the previous CPU sample the
@@ -272,15 +302,13 @@ function startHost(hostEntry, onData, { interval = DEFAULT_INTERVAL, useMock = f
     if (running) onData(payload)
   }
 
-  // Defer first tick so the caller has the handle before onData fires.
-  setImmediate(tick)
-  timer = setInterval(tick, interval)
+  const loop = runLoop(tick, interval)
 
   return {
     stop() {
       running = false
-      if (timer) clearInterval(timer)
-      timer = null
+      loop.stop()
+      if (!hostEntry.local) ssh.closeHost(hostEntry).catch(() => {})
     },
   }
 }
@@ -294,4 +322,4 @@ function startAll(hosts, onData, opts) {
 }
 
 // mergeBackendResults, planSlots and pollSlot are exported for tests only.
-module.exports = { startHost, startAll, mergeBackendResults, planSlots, pollSlot }
+module.exports = { startHost, startAll, mergeBackendResults, planSlots, pollSlot, runLoop, DEFAULT_INTERVAL, REMOTE_INTERVAL }
