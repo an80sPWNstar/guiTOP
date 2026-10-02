@@ -9,6 +9,16 @@ _Last updated: 2026-10-02. Read this + `CLAUDE.md` once at session start._
 - **0.3.17:** the client accepted only results under 10 s old, but the agent re-runs one-shots (probe, hostname, rocm-name) every 300 s, so a relaunched app drew "agent sample for probe is 284s old" and no GPUs for up to 5 minutes. One-shots are now exempt. Verified by relaunching 30 s after a quit: the probe served was 19 s old and all 4 GPUs drew at once.
 - **0.3.18:** `hosts.js` required a username on agent hosts, so the config the agent README documents threw in `loadHosts` at startup; on Linux that is a modal "JavaScript error in the main process" box that blocks the main thread (found with gdb: `gtk_dialog_run`). Verified on .70 under xvfb with the README-shaped config: 4 GPUs through the agent over loopback, 93 requests, 0 failures, one kept-alive socket.
 - **Still open from this run:** any invalid hosts.json still throws uncaught at startup and blocks behind that modal box; it should fall back with an error instead. Under xvfb, `pkill` does not end the app while the box is up; it needs `kill -9`.
+**NEXT, in this order (agreed 2026-10-02):**
+1. **Invalid hosts.json must not crash startup.** `loadHosts` throws on the first bad entry, uncaught, and Electron shows a modal "JavaScript error in the main process" box that blocks the main thread (invisible on a headless box). Load the good hosts, report the bad one in the UI. Repro: a non-local host with no username and `transport: "stream"`.
+2. **Startup SSH handshake timeout** (first connect timed out on 2 of 3 launches; backoff absorbs it). Only stream/exec hosts are affected; Bryan has none right now, so testing needs a temporary stream host.
+3. **Agent stuck path:** never met a real hung driver. Test with a fake command that blocks uninterruptibly or ignores SIGKILL-free waits, never by hanging .70's driver.
+4. Findings-report items, none built: single-instance lock, tray "pause remote polling", startup delay + jitter, low-privilege guitop user on .70, SSH key auth instead of the stored password, sshd `MaxStartups` / per-user session limits on .70. Lower priority now that .70 is on the agent; they matter again for any new SSH host.
+
+**Waiting on Bryan:** (a) OK to tag v0.3.18 and publish one GitHub release with the 7 installers (skip 0.3.15–0.3.17; last public is 0.3.14). (b) Whether to enable ufw on .70; it is inactive, so 17581 is reachable by anything that can reach .70, and the bearer token is the only guard.
+
+**Housekeeping:** the `E:s_code_projectsguiTOP` checkout is on `2a27e92`, behind main; `git pull` there (it holds untracked HANDOFF.md and docs/, leave those). Worktree for this work: `C:UsersBryanorcaworkspacesguiTOPguiTOP`, installers in its `dist/`.
+
 - **Lost:** a Haiku build agent ran `rm -rf node_modules package-lock.json dist` in this worktree instead of the WSL checkout and repointed the worktree's `.git` at a WSL path. Repaired; everything tracked was intact. Whatever older installers sat in this worktree's `dist/`, including the 0.3.15 set, are gone; they were never released.
 
 ## 2026-10-02 (v0.3.15: streaming SSH transport; agent deployed on .70)
