@@ -141,6 +141,34 @@ async function main() {
   }
   ok('agentPort validation rejects out-of-range', portErr2 !== null)
 
+  // 12. Non-local host needs username except when transport is 'agent'.
+  const testHost6 = { label: 'a', host: '10.0.0.9', transport: 'agent', agentToken: 'x' }
+  let validated6 = null
+  try {
+    validated6 = hostConfig.validate(testHost6, [])
+  } catch (e) {
+    ok('agent host needs no username', false)
+  }
+  ok('agent host needs no username', validated6 && validated6.transport === 'agent')
+
+  const testHost7 = { label: 's', host: '10.0.0.9', transport: 'stream' }
+  let validationErr7 = null
+  try {
+    hostConfig.validate(testHost7, [])
+  } catch (e) {
+    validationErr7 = e
+  }
+  ok('stream host still needs a username', validationErr7 && validationErr7.message && validationErr7.message.includes('username'))
+
+  const testHost8 = { label: 'b', host: '10.0.0.9', transport: 'agent', username: 'bad user!' }
+  let validationErr8 = null
+  try {
+    hostConfig.validate(testHost8, [])
+  } catch (e) {
+    validationErr8 = e
+  }
+  ok('agent host with a bad username is rejected', validationErr8 && validationErr8.message && validationErr8.message.includes('username'))
+
   // 11. Keys are only included when present.
   const testHost5 = { label: 'test5', host: '10.0.0.5', port: 22, username: 'user', password: 'pass' }
   const validated5 = hostConfig.validate(testHost5, [])

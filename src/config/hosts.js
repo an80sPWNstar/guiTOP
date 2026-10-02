@@ -18,7 +18,10 @@ function validate(entry, i) {
 
   if (local) return { label: label.trim(), host, local: true }
 
-  if (typeof username !== 'string' || !USERNAME_RE.test(username)) {
+  // The agent speaks HTTP with a token and never logs in, so it needs no username.
+  // Requiring one crashed startup on the config the agent README documents.
+  const needsUser = transport !== 'agent' || username != null
+  if (needsUser && (typeof username !== 'string' || !USERNAME_RE.test(username))) {
     throw new Error(`${tag}: invalid username "${username}"`)
   }
 
