@@ -181,6 +181,13 @@ class WorkerThread(threading.Thread):
 class AgentHandler(BaseHTTPRequestHandler):
   """HTTP request handler for the agent."""
 
+  # HTTP/1.0 closes the socket after every response, which defeats the client's
+  # keep-alive and costs a TCP connection per poll. Every response sends
+  # Content-Length, so 1.1 is safe. The timeout frees a thread pinned by an idle
+  # or dead client.
+  protocol_version = 'HTTP/1.1'
+  timeout = 60
+
   def log_message(self, format, *args):
     """Suppress per-request logging."""
     pass
@@ -371,9 +378,9 @@ def ensure_token_file(token_file):
   finally:
     os.close(fd)
 
-  # Print to stderr so it's visible to the user
+  # Never print the token itself: under systemd, stderr goes to the journal,
+  # which other accounts in the adm and systemd-journal groups can read.
   print(f'Created token file: {token_path}', file=sys.stderr)
-  print(f'Token: {token}', file=sys.stderr)
 
   return token
 

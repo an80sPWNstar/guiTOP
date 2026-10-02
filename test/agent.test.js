@@ -252,6 +252,46 @@ async function main() {
       // 7. Agent token enforcement
       const noToken = await agentGet('echo-test', 'invalid')
       eq('token enforcement', noToken.status, 401)
+
+      // 8. Keep-alive: the agent must speak HTTP/1.1 so the client's keep-alive agent reuses one socket
+      const kaAgent = new http.Agent({ keepAlive: true, maxSockets: 1 })
+      const kaGet = () => new Promise((resolve, reject) => {
+        const req = http.request({
+          hostname: '127.0.0.1',
+          port: agentPort,
+          path: '/v1/health',
+          method: 'GET',
+          agent: kaAgent,
+          headers: {
+            'Authorization': `Bearer ${TOKEN}`
+          }
+        }, (res) => {
+          let data = ''
+          res.on('data', (chunk) => { data += chunk })
+          res.on('end', () => {
+            resolve({ status: res.statusCode, reused: req.reusedSocket })
+          })
+        })
+        req.on('error', reject)
+        req.setTimeout(5000, () => {
+          req.destroy()
+          reject(new Error('request timeout'))
+        })
+        req.end()
+      })
+      try {
+        const first = await kaGet()
+        const second = await kaGet()
+        eq('keep-alive: first status', first.status, 200)
+        eq('keep-alive: second status', second.status, 200)
+        eq('keep-alive: first reusedSocket', first.reused, false)
+        eq('keep-alive: second request reuses the socket', second.reused, true)
+      } catch (e) {
+        ok('keep-alive', false)
+        console.log(`  keep-alive error: ${e.message}`)
+      } finally {
+        kaAgent.destroy()
+      }
     } finally {
       await stopAgent()
     }
