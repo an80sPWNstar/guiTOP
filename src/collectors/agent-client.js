@@ -86,7 +86,10 @@ function exec(hostEntry, entry) {
 
           const { state, code, out, ageMs } = json
           if (state === 'ok') {
-            if (ageMs <= 10000) {
+            // Only a live sample must be fresh. A one-shot (detection, names) is re-run by the
+            // agent every 300 s and describes facts that do not change between runs; rejecting
+            // it by age left a relaunched app with no backend for up to five minutes.
+            if (entry.stream === false || ageMs <= 10000) {
               code === 0 ? resolve(out) : reject(new Error(`Command exited ${code}`))
             } else {
               reject(new Error(`agent sample for ${name} is ${Math.round(ageMs / 1000)}s old`))

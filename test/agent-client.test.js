@@ -72,6 +72,32 @@ async function main() {
     ok('stats returns object', false)
   }
 
+  // One-shot results are exempt from the age limit; live samples are not
+  const ageServer = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ state: 'ok', code: 0, out: 'cached', ageMs: 284000 }))
+  })
+  await new Promise(r => ageServer.listen(0, '127.0.0.1', r))
+  const ageHost = { label: 'age', host: '127.0.0.1', agentToken: 't', agentPort: ageServer.address().port }
+  try {
+    try {
+      const val = await agentClient.exec(ageHost, { name: 'probe', stream: false })
+      eq('one-shot accepts an old result', val, 'cached')
+    } catch (err) {
+      ok('one-shot accepts an old result', false)
+      console.log(err.message)
+    }
+    try {
+      await agentClient.exec(ageHost, { name: 'nv-gpu', stream: true })
+      ok('live sample rejects an old result', false)
+    } catch (err) {
+      ok('live sample rejects an old result', /old/.test(err.message))
+    }
+  } finally {
+    agentClient.closeHost(ageHost)
+    await new Promise(r => ageServer.close(r))
+  }
+
   console.log(`${pass} passed, ${fail} failed`)
   process.exit(fail ? 1 : 0)
 }
