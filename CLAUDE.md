@@ -33,7 +33,11 @@ guiTOP/
 │   │   ├── amd-sysfs.js    # bare amdgpu sysfs reader (no ROCm needed)
 │   │   ├── vendor.js       # per-host backend detection, cached
 │   │   ├── parse.js        # CSV → structured GPU readings
-│   │   ├── ssh.js          # ssh2 transport: connect, exec, return stdout
+│   │   ├── ssh.js          # ssh2 pool, exec, stream open, connection + login budgets
+│   │   ├── ssh-stream.js   # long-lived streaming sampler with flock guard and stall watchdog
+│   │   ├── remote-commands.js # fixed command table, identified by name, moved from three modules
+│   │   ├── remote.js       # transport dispatcher: route to stream / exec / agent
+│   │   ├── agent-client.js # HTTP client for Python agent on port 17581
 │   │   ├── service.js      # Per-host poll loop, emits {host, gpus, processes}
 │   │   ├── mock.js         # Synthetic GPU data for dev
 │   │   ├── claude-usage.js # Polls cswap list --json → session/week pct matching online account
@@ -57,6 +61,7 @@ guiTOP/
 │       └── claude-usage-strip.js # Claude usage UI strip widget
 ├── styles/main.css         # Obsidian Glass theme + per-skin vars + Claude strip CSS
 ├── tools/gpu-probe.js      # Standalone hardware capture (no deps, no Electron)
+├── agent/                  # Python HTTP agent server, systemd user unit, install script
 ├── test/                   # *.test.js fixtures, run by `npm test`
 └── assets/fonts/           # DSEG, Orbitron, Rajdhani, Share Tech Mono
 ```
@@ -207,6 +212,22 @@ is an `--hm-*` custom property in `main.css`, the same arrangement the Claude st
 panel with square bar ends, and Gauges gets the default teal/amber. The shell is built once and
 only the numbers and bar widths change per tick.
 
+## Remote Transports
+
+On 2026-10-02, guiTOP flooded family-llm (.70) with password-authenticated SSH logins at one login per command over 4 commands per second, exhausting systemd-logind and dbus until the host hung; recovery required a power cycle. A prior 2026-09-14 incident with a stuck NVIDIA driver showed the same pattern: about 1650 unkillable SSH sessions consumed 62 GB RAM + swap, rendering the host unreachable. Both incidents are prevented by enforcing one login per host per app run in steady state, never more than 6 login attempts per host in any 10-minute window, and at most one stuck sampler process per host on the remote.
+
+Three transports are available per host via the `transport` key in hosts.json (defaults to `'stream'`): `'stream'` runs one SSH connection with a long-lived shell loop that prints framed samples every 2 seconds, zero new channels per poll; `'exec'` is the existing pooled one-channel-per-command path; `'agent'` bypasses SSH entirely and calls a Python agent over HTTP. All three present the same `execRemote(hostEntry, cmd)` interface.
+
+**Stream transport** opens one channel per host running a remote shell script that emits samples in a nonce-framed loop. Commands are identified by name from `remote-commands.js`; a name is added on first request and dropped after 30 seconds idle. The script frames every line with `@@<nonce> <marker>` tokens: `B` marks the start of an iteration, `S name` / `E name code` wrap command outputs, `Z` commits all results, and `BUSY` signals a stuck lock. The lock file `/tmp/guitop-<lockId>-$(id -u).lock` is taken with `flock` where available, and every command in the loop inherits its fd 9. A command stuck in an unkillable D-state therefore keeps the lock held after its loop is gone, so a restarted stream finds it taken, prints `BUSY` and exits instead of spawning a second stuck process beside the first. `sleep` runs with fd 9 closed, so a predecessor that is merely sleeping does not block an ordinary restart for longer than one iteration. Stall detection closes the channel if no line arrives for 15 seconds, marking the sampler stuck and restarting with exponential backoff (doubling 2s to 300s cap); after a `BUSY` the first two retries wait 3 seconds, since an ordinary predecessor is gone within one iteration, and a third `BUSY` marks the sampler stuck and falls back to the doubling schedule. Each channel's callbacks carry the generation they were opened with, so output still in flight from a replaced channel cannot leak into the new one.
+
+**ssh.js connection and command timeouts:** any connect error before `ready` (refused, auth, host key, ready timeout) backs that host off for 2 seconds doubling to 60, measured from the moment of the failure and not from when the attempt started, since a connect that fails after its 10-second ready timeout would otherwise retry at once. Independently, no more than 6 login attempts per host are made in any sliding 10-minute window; a connection that drops after `ready` is not a failure, but its reconnect still spends budget. A command that times out after its channel opened closes that channel only and keeps the connection; a timeout before the channel opened means the far end is frozen and drops the connection. `closeHost` resets a host's backoff and budget, which happens only when the user edits or removes the host.
+
+**Agent transport** skips SSH and sends HTTP GET to `http://<host>:<agentPort||17581>/v1/run?name=<cmd>` with Bearer token from `hostEntry.agentToken`. One serial worker thread per command name ensures stuck commands never spawn a sibling. A run that outlives `--run-timeout` is killed as a whole process group (each run starts its own session), because killing only the shell would orphan anything it forked; the result reports code -1. `stuck` is reported only when that kill cannot complete, the D-state case. The agent runs on Python 3.8+, stdlib only, and needs `loginctl enable-linger` to operate without an active login session. Port 17581/tcp should be open to the LAN only. The token is hand-edited into hosts.json as plain text once and encrypted by guiTOP on next launch using `safeStorage`.
+
+The `/debug/remote` endpoint on port 17580 returns JSON with host labels/transports and per-transport stats. Two live checks from the incident findings: on this PC, count TCP connections to the remote on port 22 with `(Get-NetTCPConnection -RemoteAddress <ip> -RemotePort 22 -State Established).Count` (expected: 1–2 over time, never growing); on the remote, count accepted SSH logins with `journalctl -u ssh ... | grep -c Accepted` (expected: ~1, not hundreds; filter on `Accepted password`, since guiTOP logs in with the stored password and interactive `ssh` from the dev box uses a key).
+
+First live run, 2026-10-02 against .70 (4 NVIDIA GPUs): over 10 minutes the app made one accepted login (one earlier attempt timed out in the handshake and backed off), opened 4 channels during warm-up and none after, and committed about one iteration per 2.1 seconds with no stalls. Warm-up took 4 restarts as names arrived and one `BUSY`, which is the predecessor still holding the lock through its sleep and is absorbed by the 3-second quick retry. Killing the remote loop by hand produced one restart on a fresh channel over the same connection within 5 seconds, with no new login. One sampler shell existed on the remote throughout.
+
 ## Commands
 | Command | What |
 |---------|------|
@@ -227,6 +248,7 @@ only the numbers and bar widths change per tick.
 | `curl localhost:17580/procs/toggle` | Toggle the process table |
 | `curl "localhost:17580/resize?w=&h="` | Resize the window (self-verify responsive layout) |
 | `curl localhost:17580/gpu/backends` | Which backend each host resolved to + null metrics |
+| `curl localhost:17580/debug/remote` | Per-transport connection stats and host transport choices |
 | `curl localhost:17580/debug/strip` | Claude strip geometry + element overlap check |
 | `curl localhost:17580/debug/gauges` | Gauges skin geometry dump |
 | `curl localhost:17580/debug/corvette` | Corvette skin geometry dump |
@@ -321,6 +343,13 @@ Current test suites:
     `0%`: a first tick, a repeated tick, counters that went backwards after a reboot, and the tick
     after an unreadable sample. Also guards the forced zero exit on the remote command.
 *   `test/cswap.test.js`: Validates the per-platform cswap invocation and `cswap auto` detection — command-line matching against real `uv`-launched command lines, and both PowerShell date serialisations.
+*   `test/ssh-pool.test.js`: Guards the SSH connection pool: exponential backoff (doubles 2s→4s→8s capped at 60s), login budget enforcement (refuses the 7th attempt in 10 minutes, allows again when window slides), `closeHost` resets health, backoff measured from the failure rather than the attempt start, calls with no credentials spending no budget, a command timeout keeping the connection while a channel-open timeout drops it, line splitting across chunk boundaries, `openStream` onClose fired exactly once and `close()` idempotent, `stats()` counters.
+*   `test/poll-loop.test.js`: Guards that the per-host tick loop never overlaps itself: a slow tick delays the next one instead of stacking a second on top, which `setInterval` cannot express.
+*   `test/ssh-stream.test.js`: Fake `openStream` and injected clock/timers; validates `buildScript` contains every stream-capable command and the flock/BUSY guard and `sleep 2 9>&-`, `parseMarker` state machine and iteration boundary detection, a full framed iteration resolves with byte-correct output including edge cases (trailing-newline, no output), non-zero E code rejects `Command exited N`, four exec calls in one tick open one channel (coalesced), steady state over 20 iterations opens no further channels, stall→restart→BUSY→quick-retries→stuck-message sequence, restart delay doubles and caps at 300s, idle names dropped after 30s, never two channels open at once, output and close events from a replaced channel ignored, and a name requested while a channel is still opening picked up by a later channel.
+*   `test/remote.test.js`: Dispatcher routing for all three transports (stub the underlying modules), command table integrity (names unique, commands match source constants, `agent/commands.json` equals `agentTable()` to guard drift), `hosts.js` transport/agentPort validation.
+*   `test/agent-client.test.js`: Real `http.createServer` on 127.0.0.1:0 serving canned JSON responses; validates ok/stale/pending/stuck/401-forbidden/missing-token/backoff-without-request paths, `keepAlive` connection reuse.
+*   `test/agent.test.js`: If Python 3 is available, spawn the agent with a temp token file and commands.json of harmless commands (`echo hi`, `exit 3`), validate `/v1/health` response, 401 on bad token, `/v1/run` success and exit codes, unknown-name 404, and a command outliving `--run-timeout` killed and reporting code -1; skip with "skipped: no python" if Python is unavailable. On Windows it runs the commands through Git's `sh.exe` with that directory on `Path`, or external commands exit 127.
+*   **Every async test file fails on a drained event loop** (`process.on('beforeExit')`). A test awaiting a promise that only a fake timer would settle otherwise lets Node exit 0, and `run.js` counts that as a pass; that is how a hung `ssh-stream` case once looked green. With injected fake timers, `await flush()` after each `advance()` that opens a channel, or the sampler's `await openStream` never resumes.
 
 **Exit Code Handling**: `ssh.js` rejects connections when a remote command exits with a non-zero status. Both the backend probe command and the final sysfs dump command conclude with shell tests that legitimately fail on healthy machines. Both commands must explicitly force a zero exit code. `commands.test.js` asserts this behavior.
 

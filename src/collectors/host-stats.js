@@ -16,12 +16,8 @@
 
 const fs = require('fs')
 const os = require('os')
-const { execRemote } = require('./ssh')
-
-// Fixed string, no interpolation. Both files are read in one call so the CPU and
-// memory halves describe the same instant. `true` forces exit 0: ssh.js rejects a
-// non-zero status, and cat fails on a host with no /proc, which is not our error.
-const HOST_STAT_CMD = 'cat /proc/stat /proc/meminfo 2>/dev/null; true'
+const { execRemote } = require('./remote')
+const { HOST_STAT_CMD } = require('./remote-commands')
 
 // --- CPU ---------------------------------------------------------------------
 

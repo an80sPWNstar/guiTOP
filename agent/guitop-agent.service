@@ -1,0 +1,15 @@
+[Unit]
+Description=guiTOP remote agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/share/guitop-agent/guitop-agent.py
+Restart=on-failure
+RestartSec=10
+Nice=10
+MemoryMax=256M
+TasksMax=64
+
+[Install]
+WantedBy=default.target

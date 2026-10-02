@@ -13,7 +13,8 @@ const { startHost } = require('./src/collectors/service')
 const { startClaudeUsage } = require('./src/collectors/claude-usage')
 const { startClaudeUsageOAuth } = require('./src/collectors/claude-usage-oauth')
 const { startClaudeSwap } = require('./src/collectors/claude-swap')
-const { testConnect, execRemote } = require('./src/collectors/ssh')
+const { testConnect } = require('./src/collectors/ssh')
+const remote = require('./src/collectors/remote')
 const { cswapCmd } = require('./src/collectors/cswap-cmd')
 const winPsHost = process.platform === 'win32' ? require('./src/collectors/win-ps-host') : null
 const nvidiaStream = require('./src/collectors/nvidia-stream')
@@ -47,6 +48,7 @@ const activeHosts = []     // validated host entries
 const rawHosts = []        // raw configs (for persistence — no passwords)
 const hostHandles = {}     // { label: stopHandle }
 const hostPasswords = {}   // { label: password } — in memory only, never persisted
+const hostAgentTokens = {} // { label: agentToken } — in memory only, never persisted
 const lastPayloads = {}    // { label: latest payload } — powers /gpu/backends
 let claudeUsageHandle = null
 let claudeSwapHandle = null
@@ -152,6 +154,7 @@ function startCollector(hostEntry) {
   // Attach in-memory password + known host key for SSH
   if (!enriched.local) {
     if (hostPasswords[enriched.label]) enriched.password = hostPasswords[enriched.label]
+    if (hostAgentTokens[enriched.label]) enriched.agentToken = hostAgentTokens[enriched.label]
     const known = loadKnownHosts(app.getPath('userData'))
     const hk = `${enriched.host}:${enriched.port || 22}`
     if (known[hk]) enriched.knownHostKey = known[hk]
@@ -215,7 +218,7 @@ function createWindow() {
     rawHosts.push(...initial)
     activeHosts.push(...hosts)
 
-    // Restore encrypted passwords from saved host entries
+    // Restore encrypted passwords and agent tokens from saved host entries
     if (safeStorage.isEncryptionAvailable()) {
       for (const raw of rawHosts) {
         if (raw.encryptedPassword) {
@@ -225,8 +228,29 @@ function createWindow() {
             )
           } catch (_) { /* decryption failed — user will be prompted */ }
         }
+        if (raw.encryptedAgentToken) {
+          try {
+            hostAgentTokens[raw.label] = safeStorage.decryptString(
+              Buffer.from(raw.encryptedAgentToken, 'base64')
+            )
+          } catch (_) { /* decryption failed — user will be prompted */ }
+        }
       }
     }
+
+    // An agent token is hand-edited into hosts.json as plaintext once (there is no
+    // UI for it yet). Use it, and seal it on the spot so it does not stay on disk.
+    let sealed = false
+    for (const raw of rawHosts) {
+      if (typeof raw.agentToken !== 'string' || !raw.agentToken) continue
+      hostAgentTokens[raw.label] = raw.agentToken
+      if (safeStorage.isEncryptionAvailable()) {
+        raw.encryptedAgentToken = safeStorage.encryptString(raw.agentToken).toString('base64')
+        delete raw.agentToken
+        sealed = true
+      }
+    }
+    if (sealed) saveHostList(app.getPath('userData'), rawHosts)
 
     for (const h of hosts) startCollector(h)
     broadcastHostList()
@@ -330,7 +354,7 @@ ipcMain.handle('cswap-add-token', (_e, { token, email, alias, slot } = {}) => ne
 ipcMain.handle('get-hosts', () => activeHosts.map(h => h.label))
 
 ipcMain.handle('add-host', async (_e, config) => {
-  const { password, acceptFingerprint, _fingerprint, ...hostData } = config
+  const { password, agentToken, acceptFingerprint, _fingerprint, ...hostData } = config
   const idx = activeHosts.length
 
   let entry
@@ -374,7 +398,7 @@ ipcMain.handle('add-host', async (_e, config) => {
         const resolveConfig = { ...entry, password }
         const knownAll = loadKnownHosts(app.getPath('userData'))
         if (knownAll[hk]) resolveConfig.knownHostKey = knownAll[hk]
-        const name = await execRemote(resolveConfig, 'hostname')
+        const name = await remote.execRemote(resolveConfig, 'hostname')
         if (name && name.trim()) {
           entry.label = name.trim()
           hostData.label = entry.label
@@ -394,6 +418,13 @@ ipcMain.handle('add-host', async (_e, config) => {
     }
   }
 
+  if (agentToken) {
+    hostAgentTokens[entry.label] = agentToken
+    if (safeStorage.isEncryptionAvailable()) {
+      hostData.encryptedAgentToken = safeStorage.encryptString(agentToken).toString('base64')
+    }
+  }
+
   rawHosts.push(hostData)
   activeHosts.push(entry)
   startCollector(entry)
@@ -407,7 +438,7 @@ ipcMain.handle('edit-host', async (_e, label, config) => {
   if (idx === -1) return { ok: false, error: `Host "${label}" not found` }
 
   const entry = activeHosts[idx]
-  const { password } = config
+  const { password, agentToken } = config
 
   // Update password in memory and persist encrypted copy
   if (password) {
@@ -416,6 +447,18 @@ ipcMain.handle('edit-host', async (_e, label, config) => {
       const rawIdx = rawHosts.findIndex(r => r.label === label)
       if (rawIdx !== -1) {
         rawHosts[rawIdx].encryptedPassword = safeStorage.encryptString(password).toString('base64')
+        saveHostList(app.getPath('userData'), rawHosts)
+      }
+    }
+  }
+
+  // Update agent token in memory and persist encrypted copy
+  if (agentToken) {
+    hostAgentTokens[entry.label] = agentToken
+    if (safeStorage.isEncryptionAvailable()) {
+      const rawIdx = rawHosts.findIndex(r => r.label === label)
+      if (rawIdx !== -1) {
+        rawHosts[rawIdx].encryptedAgentToken = safeStorage.encryptString(agentToken).toString('base64')
         saveHostList(app.getPath('userData'), rawHosts)
       }
     }
@@ -439,6 +482,7 @@ ipcMain.handle('remove-host', (_e, label) => {
     delete hostHandles[label]
   }
   delete hostPasswords[label]
+  delete hostAgentTokens[label]
 
   activeHosts.splice(idx, 1)
   rawHosts.splice(idx, 1)
@@ -635,6 +679,15 @@ app.whenReady().then(() => {
       }))
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ ok: true, hosts }, null, 2))
+    } else if (req.url === '/debug/remote') {
+      // Remote transport stats (SSH, stream, agent)
+      const hosts = activeHosts.map(h => ({
+        label: h.label,
+        transport: remote.transportOf(h),
+      }))
+      const stats = remote.stats()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, hosts, ...stats }, null, 2))
     } else if (req.url === '/debug/claude-config' && win && !win.isDestroyed()) {
       const info = await win.webContents.executeJavaScript(`(() => {
         try {
@@ -953,4 +1006,5 @@ app.on('before-quit', () => {
   if (claudeOAuthHandle) claudeOAuthHandle.stop()
   if (winPsHost) winPsHost.stop()
   nvidiaStream.stop()
+  remote.closeAll()
 })

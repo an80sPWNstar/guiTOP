@@ -1,0 +1,62 @@
+[
+  {
+    "name": "nv-gpu",
+    "cmd": "nvidia-smi --query-gpu=index,uuid,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed,clocks.sm --format=csv,noheader,nounits",
+    "interval": 2
+  },
+  {
+    "name": "nv-proc",
+    "cmd": "nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_memory --format=csv,noheader,nounits",
+    "interval": 2
+  },
+  {
+    "name": "ps",
+    "cmd": "ps -eo pid=,user:32=,pcpu=,pmem=,etimes=",
+    "interval": 2
+  },
+  {
+    "name": "host",
+    "cmd": "cat /proc/stat /proc/meminfo 2>/dev/null; true",
+    "interval": 2
+  },
+  {
+    "name": "amd-static",
+    "cmd": "amd-smi static --json",
+    "interval": 2
+  },
+  {
+    "name": "amd-metric",
+    "cmd": "amd-smi metric --json",
+    "interval": 2
+  },
+  {
+    "name": "amd-proc",
+    "cmd": "amd-smi process --json",
+    "interval": 2
+  },
+  {
+    "name": "rocm",
+    "cmd": "rocm-smi --showproductname --showuniqueid --showuse --showmeminfo vram --showtemp --showpower --showmaxpower --showfan --showclocks --json",
+    "interval": 2
+  },
+  {
+    "name": "sysfs",
+    "cmd": "grep -H . /sys/class/drm/card*/device/gpu_busy_percent /sys/class/drm/card*/device/mem_busy_percent /sys/class/drm/card*/device/mem_info_vram_used /sys/class/drm/card*/device/mem_info_vram_total /sys/class/drm/card*/device/product_name /sys/class/drm/card*/device/hwmon/hwmon*/temp1_input /sys/class/drm/card*/device/hwmon/hwmon*/temp1_label /sys/class/drm/card*/device/hwmon/hwmon*/power1_average /sys/class/drm/card*/device/hwmon/hwmon*/power1_input /sys/class/drm/card*/device/hwmon/hwmon*/power1_cap /sys/class/drm/card*/device/hwmon/hwmon*/pwm1 /sys/class/drm/card*/device/hwmon/hwmon*/pwm1_max /sys/class/drm/card*/device/hwmon/hwmon*/fan1_input /sys/class/drm/card*/device/hwmon/hwmon*/fan1_max /sys/class/drm/card*/device/hwmon/hwmon*/freq1_input /sys/class/drm/card*/device/uevent 2>/dev/null; for d in /sys/class/drm/card*/device; do for f in pp_dpm_sclk; do [ -f \"$d/$f\" ] && sed \"s|^|$d/$f:|\" \"$d/$f\"; done; done 2>/dev/null; true",
+    "interval": 2
+  },
+  {
+    "name": "probe",
+    "cmd": "for c in nvidia-smi amd-smi rocm-smi; do command -v $c >/dev/null 2>&1 && echo $c; done; for u in /sys/class/drm/card[0-9]*/device/uevent; do grep -q \"^DRIVER=amdgpu\" \"$u\" 2>/dev/null && { echo amdgpu; break; }; done; true",
+    "interval": 300
+  },
+  {
+    "name": "rocm-name",
+    "cmd": "rocm-smi --showproductname --showbus --json",
+    "interval": 300
+  },
+  {
+    "name": "hostname",
+    "cmd": "hostname",
+    "interval": 300
+  }
+]

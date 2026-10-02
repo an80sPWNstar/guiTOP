@@ -7,9 +7,44 @@ const crypto = require('crypto')
 
 let clientFactory = () => new Client()
 let defaultExecTimeoutMs = 5000
+let now = () => Date.now()
+
+const LOGIN_BUDGET = 6
+const LOGIN_WINDOW_MS = 600000  // 10 minutes
 
 // key -> { conn, ready: Promise<Client> }
 const pool = new Map()
+
+// Health tracking: key -> { failures, nextAt, attempts: [ms timestamps], lastError, counters }
+const health = new Map()
+
+function getHealth(key) {
+  if (!health.has(key)) {
+    health.set(key, {
+      failures: 0,
+      nextAt: 0,
+      attempts: [],
+      lastError: null,
+      counters: {
+        connects: 0,
+        readies: 0,
+        connectFailures: 0,
+        channels: 0,
+        commandTimeouts: 0,
+        openTimeouts: 0
+      }
+    })
+  }
+  return health.get(key)
+}
+
+function resetHealth(key) {
+  const h = getHealth(key)
+  h.failures = 0
+  h.nextAt = 0
+  h.attempts = []
+  h.lastError = null
+}
 
 function fingerprint(keyBuf) {
   return 'SHA256:' + crypto.createHash('sha256').update(keyBuf).digest('base64')
@@ -71,7 +106,33 @@ function getConnection(hostConfig) {
     return Promise.reject(new Error('No SSH agent or password available'))
   }
 
+  // Check backoff and login budget before building a client
+  const h = getHealth(key)
+  const currentNow = now()
+
+  if (currentNow < h.nextAt) {
+    const waitSec = Math.ceil((h.nextAt - currentNow) / 1000)
+    const err = new Error(`backing off ${hostConfig.host} for ${waitSec}s after: ${h.lastError}`)
+    err.code = 'BACKOFF'
+    return Promise.reject(err)
+  }
+
+  // Drop attempts older than LOGIN_WINDOW_MS (10 min)
+  const cutoff = currentNow - LOGIN_WINDOW_MS
+  h.attempts = h.attempts.filter(t => t > cutoff)
+
+  if (h.attempts.length >= LOGIN_BUDGET) {
+    const err = new Error(`login budget reached for ${hostConfig.host}: ${LOGIN_BUDGET} attempts in 10 min`)
+    err.code = 'LOGIN_BUDGET'
+    return Promise.reject(err)
+  }
+
+  // Record this login attempt
+  h.attempts.push(currentNow)
+  h.counters.connects++
+
   let resolveReady, rejectReady
+  let isReady = false
   const ready = new Promise((resolve, reject) => {
     resolveReady = resolve
     rejectReady = reject
@@ -91,6 +152,13 @@ function getConnection(hostConfig) {
 
   function onConnError(err) {
     evict()
+    // Only apply backoff for errors before the connection is ready
+    if (!isReady) {
+      h.failures++
+      h.lastError = err.message
+      h.nextAt = now() + Math.min(60000, 2000 * Math.pow(2, h.failures - 1))
+      h.counters.connectFailures++
+    }
     if (rejectReady) rejectReady(err)
   }
 
@@ -100,6 +168,13 @@ function getConnection(hostConfig) {
 
   const connectOpts = buildConnectOpts(hostConfig, (err) => {
     evict()
+    // Only apply backoff for errors before the connection is ready
+    if (!isReady) {
+      h.failures++
+      h.lastError = err.message
+      h.nextAt = now() + Math.min(60000, 2000 * Math.pow(2, h.failures - 1))
+      h.counters.connectFailures++
+    }
     if (rejectReady) rejectReady(err)
   })
 
@@ -109,7 +184,13 @@ function getConnection(hostConfig) {
 
   // The 'error' listener stays for the life of the connection: a later
   // ECONNRESET must evict the entry, not throw as an unhandled 'error' event.
-  conn.on('ready', () => resolveReady(conn))
+  conn.on('ready', () => {
+    isReady = true
+    h.failures = 0
+    h.nextAt = 0
+    h.counters.readies++
+    resolveReady(conn)
+  })
 
   return ready
 }
@@ -130,6 +211,7 @@ function execRemote(hostConfig, command, opts = {}) {
   return getConnection(hostConfig).then((conn) => {
     return new Promise((resolve, reject) => {
       let settled = false
+      let callbackFired = false
 
       function settle(val) {
         if (settled) return
@@ -148,18 +230,27 @@ function execRemote(hostConfig, command, opts = {}) {
       // exec callback would never exist and the command would hang forever.
       let stream = null
       const timer = setTimeout(() => {
-        if (stream && typeof stream.close === 'function') stream.close()
-        dropConnection(hostConfig, conn)
+        if (callbackFired) {
+          // Timer fired after stream callback delivered a stream: close stream only, keep connection
+          if (stream && typeof stream.close === 'function') stream.close()
+          getHealth(key).counters.commandTimeouts++
+        } else {
+          // Timer fired before stream callback: drop connection
+          dropConnection(hostConfig, conn)
+          getHealth(key).counters.openTimeouts++
+        }
         rejectErr(new Error(`Command timed out after ${ms}ms: ${command}`))
       }, ms)
 
       conn.exec(posixWrap(command), (err, s) => {
+        callbackFired = true
         if (err) {
           clearTimeout(timer)
           rejectErr(err)
           return
         }
         stream = s
+        getHealth(key).counters.channels++
 
         let stdout = ''
         let stderr = ''
@@ -191,9 +282,11 @@ function execRemote(hostConfig, command, opts = {}) {
 function closeHost(hostConfig) {
   const key = poolKey(hostConfig)
   const entry = pool.get(key)
-  if (!entry) return Promise.resolve()
-  pool.delete(key)
-  if (entry.conn && typeof entry.conn.end === 'function') entry.conn.end()
+  if (entry) {
+    pool.delete(key)
+    if (entry.conn && typeof entry.conn.end === 'function') entry.conn.end()
+  }
+  resetHealth(key)
   return Promise.resolve()
 }
 
@@ -202,6 +295,129 @@ function closeAll() {
     pool.delete(key)
     if (entry.conn && typeof entry.conn.end === 'function') entry.conn.end()
   }
+  for (const key of health.keys()) {
+    resetHealth(key)
+  }
+}
+
+function openStream(hostConfig, command, opts = {}) {
+  const openTimeoutMs = opts.openTimeoutMs ?? 10000
+  const { onLine, onClose } = opts
+
+  return getConnection(hostConfig).then((conn) => {
+    return new Promise((resolve, reject) => {
+      let timedOut = false
+      let callbackFired = false
+      let closeCalled = false
+      let onCloseFired = false
+
+      const key = poolKey(hostConfig)
+
+      function fireOnClose(code, err) {
+        if (onCloseFired) return
+        onCloseFired = true
+        if (onClose) onClose(code, err)
+      }
+
+      const timer = setTimeout(() => {
+        timedOut = true
+        if (!callbackFired) {
+          // Drop connection if callback hasn't fired
+          dropConnection(hostConfig, conn)
+          getHealth(key).counters.openTimeouts++
+          reject(new Error(`Stream open timed out after ${openTimeoutMs}ms: ${command}`))
+        }
+      }, openTimeoutMs)
+
+      conn.exec(posixWrap(command), (err, stream) => {
+        callbackFired = true
+        clearTimeout(timer)
+
+        if (err) {
+          reject(err)
+          return
+        }
+
+        if (timedOut) {
+          if (stream && typeof stream.close === 'function') stream.close()
+          return
+        }
+
+        getHealth(key).counters.channels++
+
+        let lineBuffer = ''
+        let streamClosed = false
+
+        stream.on('data', (data) => {
+          lineBuffer += data.toString()
+          const lines = lineBuffer.split('\n')
+          // Process all complete lines except the last chunk (which might be incomplete)
+          for (let i = 0; i < lines.length - 1; i++) {
+            let line = lines[i]
+            if (line.endsWith('\r')) {
+              line = line.slice(0, -1)
+            }
+            if (onLine) onLine(line)
+          }
+          // Keep the incomplete last chunk for next data event
+          lineBuffer = lines[lines.length - 1]
+        })
+
+        stream.stderr.on('data', () => {
+          // drain and ignore stderr
+        })
+
+        stream.on('close', (code) => {
+          if (streamClosed) return
+          streamClosed = true
+          // Don't flush incomplete last line; just discard it
+          fireOnClose(code)
+        })
+
+        stream.on('error', (err) => {
+          if (streamClosed) return
+          streamClosed = true
+          fireOnClose(null, err)
+        })
+
+        resolve({
+          close() {
+            if (closeCalled) return
+            closeCalled = true
+            if (stream && typeof stream.close === 'function') {
+              stream.close()
+            }
+            // If onClose hasn't fired yet, fire it after close
+            setImmediate(() => fireOnClose(null))
+          }
+        })
+      })
+    })
+  })
+}
+
+function stats() {
+  const result = {}
+  for (const [key, h] of health) {
+    if (!h || (pool.get(key) === undefined && h.attempts.length === 0 && h.failures === 0)) {
+      continue
+    }
+    const connected = pool.has(key)
+    const loginsLast10m = h.attempts.length
+    result[key] = {
+      connected,
+      connects: h.counters.connects,
+      readies: h.counters.readies,
+      connectFailures: h.counters.connectFailures,
+      channels: h.counters.channels,
+      commandTimeouts: h.counters.commandTimeouts,
+      openTimeouts: h.counters.openTimeouts,
+      loginsLast10m,
+      backoffMs: Math.max(0, h.nextAt - now()),
+      lastError: h.lastError
+    }
+  }
+  return result
 }
 
 function testConnect(hostConfig) {
@@ -247,7 +463,10 @@ function testConnect(hostConfig) {
   })
 }
 
-module.exports = { execRemote, testConnect, fingerprint, posixWrap, closeHost, closeAll,
+module.exports = { execRemote, testConnect, fingerprint, posixWrap, closeHost, closeAll, openStream, stats,
   _setClientFactory(fn) { clientFactory = fn },
-  _setDefaultExecTimeout(ms) { const prev = defaultExecTimeoutMs; defaultExecTimeoutMs = ms; return prev } }
+  _setDefaultExecTimeout(ms) { const prev = defaultExecTimeoutMs; defaultExecTimeoutMs = ms; return prev },
+  _setNow(fn) { now = fn },
+  LOGIN_BUDGET,
+  LOGIN_WINDOW_MS }
 Object.defineProperty(module.exports, 'DEFAULT_EXEC_TIMEOUT_MS', { get: () => defaultExecTimeoutMs, enumerable: true })

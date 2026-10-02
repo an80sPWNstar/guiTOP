@@ -2,10 +2,9 @@
 // the 1s poll loop never re-probes. All probe commands are fixed constants.
 
 const { execFile } = require('child_process')
-const { execRemote } = require('./ssh')
+const { execRemote } = require('./remote')
 const fs = require('fs')
-
-const PROBE_CMD = 'for c in nvidia-smi amd-smi rocm-smi; do command -v $c >/dev/null 2>&1 && echo $c; done; for u in /sys/class/drm/card[0-9]*/device/uevent; do grep -q "^DRIVER=amdgpu" "$u" 2>/dev/null && { echo amdgpu; break; }; done; true'
+const { PROBE_CMD } = require('./remote-commands')
 
 const cache = new Map()
 

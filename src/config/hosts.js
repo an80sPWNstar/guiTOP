@@ -9,7 +9,7 @@ function validate(entry, i) {
   const tag = `hosts[${i}]`
   if (!entry || typeof entry !== 'object') throw new Error(`${tag}: not an object`)
 
-  const { label, host, username, port, local } = entry
+  const { label, host, username, port, local, transport, agentPort } = entry
 
   if (typeof label !== 'string' || !label.trim()) throw new Error(`${tag}: missing label`)
   if (typeof host !== 'string' || !HOSTNAME_RE.test(host)) {
@@ -27,7 +27,26 @@ function validate(entry, i) {
     throw new Error(`${tag}: port out of range (1–65535)`)
   }
 
-  return { label: label.trim(), host, username, port: p }
+  const result = { label: label.trim(), host, username, port: p }
+
+  // Validate transport if provided
+  if (transport != null) {
+    if (!['stream', 'exec', 'agent'].includes(transport)) {
+      throw new Error(`${tag}: transport must be stream, exec or agent`)
+    }
+    result.transport = transport
+  }
+
+  // Validate agentPort if provided
+  if (agentPort != null) {
+    const ap = Number(agentPort)
+    if (!Number.isInteger(ap) || ap < 1 || ap > 65535) {
+      throw new Error(`${tag}: agentPort out of range (1–65535)`)
+    }
+    result.agentPort = ap
+  }
+
+  return result
 }
 
 function loadHosts(arr) {

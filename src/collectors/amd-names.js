@@ -18,7 +18,7 @@
 // Names are static, so this runs once per host and is cached.
 
 const amdSmi = require('./amd-smi')
-const { execRemote } = require('./ssh')
+const { execRemote } = require('./remote')
 
 const cache = new Map()
 

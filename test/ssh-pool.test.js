@@ -46,6 +46,16 @@ class FakeStream extends EventEmitter {
   destroy() { this.closed = true }
 }
 
+class FakeStreamWithChunks extends EventEmitter {
+  constructor(chunks) { super(); this.stderr = new EventEmitter(); this.closed = false; this.chunks = chunks }
+  close() { this.closed = true }
+  emitChunks() {
+    for (const chunk of this.chunks) {
+      this.emit('data', Buffer.from(chunk))
+    }
+  }
+}
+
 class FakeClient extends EventEmitter {
   constructor() {
     super()
@@ -56,8 +66,13 @@ class FakeClient extends EventEmitter {
   }
   connect(opts) {
     this.opts = opts
-    setImmediate(() => {
-      if (this.behavior.failConnect) return this.emit('error', new Error('connect ECONNREFUSED'))
+    setImmediate(async () => {
+      if (this.behavior.connectGate) {
+        await this.behavior.connectGate
+      }
+      if (this.behavior.failConnect) {
+        return this.emit('error', new Error('connect ECONNREFUSED'))
+      }
       if (opts.hostVerifier) {
         let verdict = null
         opts.hostVerifier(Buffer.from('fake-host-key'), (v) => { verdict = v })
@@ -68,15 +83,27 @@ class FakeClient extends EventEmitter {
   }
   exec(cmd, cb) {
     this.execs.push(cmd)
-    const s = new FakeStream()
     const rules = this.behavior.rules || []
     const rule = rules.find(r => cmd.includes(r.match)) || { stdout: 'ok\n', code: 0 }
-    if (rule.noCallback) return s   // channel open never completes
+    if (rule.noCallback) {
+      const s = new FakeStream()
+      return s   // channel open never completes
+    }
+    let s
+    if (rule.chunks) {
+      s = new FakeStreamWithChunks(rule.chunks)
+    } else {
+      s = new FakeStream()
+    }
     setImmediate(() => {
       cb(null, s)
       if (rule.hang) return
       setImmediate(() => {
-        if (rule.stdout) s.emit('data', Buffer.from(rule.stdout))
+        if (rule.chunks) {
+          s.emitChunks()
+        } else {
+          if (rule.stdout) s.emit('data', Buffer.from(rule.stdout))
+        }
         if (rule.stderr) s.stderr.emit('data', Buffer.from(rule.stderr))
         s.emit('close', rule.code == null ? 0 : rule.code)
       })
@@ -91,6 +118,8 @@ ssh._setClientFactory(() => new FakeClient())
 
 const HOST_A = { label: 'a', host: '10.0.0.1', port: 22, username: 'u', password: 'p' }
 const HOST_B = { label: 'b', host: '10.0.0.2', port: 22, username: 'u', password: 'p' }
+const HOST_C = { label: 'c', host: '10.0.0.3', port: 22, username: 'u', password: 'p' }
+const HOST_BACKOFF = { label: 'backoff', host: '10.0.0.99', port: 22, username: 'u', password: 'p' }
 
 function reset() { constructed.length = 0; behavior = {} }
 
@@ -141,7 +170,8 @@ async function main() {
   eq('two hosts: host A got both of its commands', constructed[0].execs.length, 2)
 
   // 4. A command that never returns is rejected after timeoutMs, the channel
-  //    is closed, the connection is dropped, and the next call reconnects.
+  //    is closed only (not the connection), and the next call reuses the same
+  //    connection.
   await ssh.closeAll(); reset()
   behavior = { rules: [{ match: 'hang', hang: true }] }
   const t0 = Date.now()
@@ -150,11 +180,11 @@ async function main() {
   ok(`timeout: fired near timeoutMs (${elapsed}ms)`, elapsed >= 50 && elapsed < 1000)
   const hung = constructed[0]
   await sleep(5)
-  ok('timeout: connection dropped after a hung command', hung.ended === true)
+  ok('timeout: connection KEPT after a hung command', hung.ended === false)
   behavior = {}
   await ssh.execRemote(HOST_A, 'after')
-  eq('timeout: next call built a fresh client', constructed.length, 2)
-  eq('timeout: fresh client ran the command', constructed[1].execs.length, 1)
+  eq('timeout: next call REUSED the connection', constructed.length, 1)
+  eq('timeout: reused client ran second command', constructed[0].execs.length, 2)
 
   // 4b. The far end is frozen: the channel open itself never completes (exec
   //     callback never fires). Found live on 2026-09-14 by SIGSTOP-ing the
@@ -187,18 +217,60 @@ async function main() {
   eq('conn error: later call succeeds', afterErr, 'ok\n')
   eq('conn error: reconnected', constructed.length, 2)
 
-  // 6. Connect failure rejects every waiter and does not poison the cache.
+  // 6. failConnect: first execRemote rejects /ECONNREFUSED/, constructed.length 1;
+  //    immediate retry rejects with err.code 'BACKOFF' and constructed.length still 1;
+  //    clock += 2001; behavior = {}; execRemote resolves 'ok\n'; constructed.length 2.
   await ssh.closeAll(); reset()
+  let clock = 1e6
+  ssh._setNow(() => clock)
   behavior = { failConnect: true }
-  const [e1, e2] = await Promise.all([
-    rejects('connect fail: waiter 1', ssh.execRemote(HOST_A, 'x'), /ECONNREFUSED/),
-    rejects('connect fail: waiter 2', ssh.execRemote(HOST_A, 'y'), /ECONNREFUSED/),
-  ])
-  ok('connect fail: both waiters got an error', e1 && e2)
-  eq('connect fail: one client attempted', constructed.length, 1)
+  const ef1 = await rejects('case 6: first attempt', ssh.execRemote(HOST_A, 'x'), /ECONNREFUSED/)
+  eq('case 6: client attempted', constructed.length, 1)
+  const ef2 = await rejects('case 6: immediate retry', ssh.execRemote(HOST_A, 'y'), /./)
+  ok('case 6: retry is BACKOFF', ef2 && ef2.code === 'BACKOFF')
+  eq('case 6: still one client', constructed.length, 1)
+  clock += 2001
   behavior = {}
-  await ssh.execRemote(HOST_A, 'z')
-  eq('connect fail: recovered with a new client', constructed.length, 2)
+  const result6 = await ssh.execRemote(HOST_A, 'z')
+  eq('case 6: recovered', result6, 'ok\n')
+  eq('case 6: new client', constructed.length, 2)
+
+  // 6b. backoff measured from FAILURE time: let open; behavior = { failConnect: true, connectGate: new Promise(r => { open = r }) };
+  //     start p = execRemote(HOST_A,'x').catch(e => e) at clock = 1e6; await sleep(5); clock = 1e6 + 10000; open();
+  //     await p; clock = 1e6 + 10500 -> execRemote rejects err.code 'BACKOFF'; clock = 1e6 + 12001; behavior = {} -> resolves 'ok\n'.
+  await ssh.closeAll(); reset()
+  clock = 1e6
+  let open
+  behavior = { failConnect: true, connectGate: new Promise(r => { open = r }) }
+  const promise6b = ssh.execRemote(HOST_A, 'x').catch(e => e)
+  await sleep(5)
+  clock = 1e6 + 10000
+  open()
+  const err6b = await promise6b
+  ok('case 6b: error arrived', err6b && err6b.message)
+  clock = 1e6 + 10500
+  const refused6b = await rejects('case 6b: refused at t=10500', ssh.execRemote(HOST_A, 'y'), /./)
+  ok('case 6b: BACKOFF error', refused6b && refused6b.code === 'BACKOFF')
+  clock = 1e6 + 12001
+  behavior = {}
+  const result6b = await ssh.execRemote(HOST_A, 'z')
+  eq('case 6b: recovered', result6b, 'ok\n')
+
+  // 6c. no-credential calls: six times each reject /No SSH agent or password/ with constructed.length 0;
+  //     then a credentialed call resolves and constructed.length 1; stats()['u@10.0.0.1:22'].loginsLast10m is 1.
+  await ssh.closeAll(); reset()
+  for (let i = 0; i < 6; i++) {
+    const noCred = { ...HOST_A, password: undefined, label: `nocred${i}` }
+    await rejects(`case 6c: nocred ${i+1}`, ssh.execRemote(noCred, 'x'), /No SSH agent or password/)
+  }
+  eq('case 6c: no clients', constructed.length, 0)
+  behavior = {}
+  const result6c = await ssh.execRemote(HOST_A, 'seventh')
+  eq('case 6c: credentialed connects', result6c, 'ok\n')
+  eq('case 6c: one client', constructed.length, 1)
+  const stats6c = ssh.stats()
+  const loginsLast10m = stats6c['u@10.0.0.1:22'] ? stats6c['u@10.0.0.1:22'].loginsLast10m : null
+  eq('case 6c: loginsLast10m', loginsLast10m, 1)
 
   // 7. Non-zero exit keeps the connection but rejects with the stderr text.
   await ssh.closeAll(); reset()
@@ -209,21 +281,25 @@ async function main() {
   await ssh.execRemote(HOST_A, 'fine')
   eq('nonzero: same client reused', constructed.length, 1)
 
-  // 8. Host key mismatch still rejects, and nothing is cached for that host.
+  // 8. host key mismatch exactly as the ORIGINAL case 8 did (no skip): badKey rejects /HOST KEY MISMATCH/;
+  //    then (clock += 2001 to clear the backoff the mismatch causes) the matching key connects; constructed.length 2.
   await ssh.closeAll(); reset()
+  clock = 1e6
+  behavior = {}
   const badKey = { ...HOST_A, knownHostKey: 'SHA256:definitely-not-it' }
-  await rejects('hostkey: mismatch rejects', ssh.execRemote(badKey, 'x'), /HOST KEY MISMATCH/)
+  await rejects('case 8: mismatch rejects', ssh.execRemote(badKey, 'x'), /HOST KEY MISMATCH/)
+  clock += 2001
   behavior = {}
   const goodKey = { ...HOST_A, knownHostKey: ssh.fingerprint(Buffer.from('fake-host-key')) }
   await ssh.execRemote(goodKey, 'x')
-  eq('hostkey: matching key connects', constructed.length, 2)
+  eq('case 8: matching key connects', constructed.length, 2)
 
-  // 8b. Unknown key with a reporter: reported, rejected, not cached.
+  // 8b. unchanged unknown-key case.
   await ssh.closeAll(); reset()
   let reported = null
-  const unknown = { ...HOST_A, onUnknownKey: (fp) => { reported = fp } }
-  await rejects('unknown key: rejects', ssh.execRemote(unknown, 'x'), /UNKNOWN_HOST_KEY:/)
-  ok('unknown key: fingerprint reported', typeof reported === 'string' && reported.startsWith('SHA256:'))
+  const unknown = { ...HOST_A, label: 'unknown', onUnknownKey: (fp) => { reported = fp } }
+  await rejects('case 8b: rejects', ssh.execRemote(unknown, 'x'), /UNKNOWN_HOST_KEY:/)
+  ok('case 8b: fingerprint reported', typeof reported === 'string' && reported.startsWith('SHA256:'))
 
   // 9. No credentials: rejected before any connection is attempted.
   await ssh.closeAll(); reset()
@@ -255,9 +331,133 @@ async function main() {
   ssh._setDefaultExecTimeout(prev)
   eq('default timeout: restored', ssh.DEFAULT_EXEC_TIMEOUT_MS, 5000)
 
+  // 12. doubling: failConnect on HOST_A; for n = 1..6: execRemote rejects /ECONNREFUSED/,
+  //     then eq(`backoff after failure ${n}`, ssh.stats()['u@10.0.0.1:22'].backoffMs, [2000,4000,8000,16000,32000,60000][n-1]),
+  //     then clock += that value + 1.
+  await ssh.closeAll(); reset()
+  clock = 1e6
+  behavior = { failConnect: true }
+  for (let n = 1; n <= 6; n++) {
+    await rejects(`case 12: fail ${n}`, ssh.execRemote(HOST_A, `x${n}`), /ECONNREFUSED/)
+    const stats12 = ssh.stats()
+    const expectedMs = [2000, 4000, 8000, 16000, 32000, 60000][n - 1]
+    eq(`case 12: backoff after failure ${n}`, stats12['u@10.0.0.1:22'].backoffMs, expectedMs)
+    clock += expectedMs + 1
+  }
+
+  // 13. login budget with SUCCESSFUL logins dropped by the remote: for i = 0..5: execRemote(HOST_A, 'x') resolves,
+  //     then constructed[i].emit('close'), await sleep(5). 7th call rejects err.code 'LOGIN_BUDGET', constructed.length 6.
+  //     clock += 600001; 7th call now resolves; constructed.length 7.
+  await ssh.closeAll(); reset()
+  clock = 1e6
+  behavior = {}
+  for (let i = 0; i < 6; i++) {
+    const r = await ssh.execRemote(HOST_A, `x${i}`)
+    eq(`case 13: call ${i}`, r, 'ok\n')
+    constructed[i].emit('close')
+    await sleep(5)
+  }
+  const budgetErr = await rejects('case 13: 7th refused', ssh.execRemote(HOST_A, 'x6'), /./)
+  ok('case 13: LOGIN_BUDGET', budgetErr && budgetErr.code === 'LOGIN_BUDGET')
+  eq('case 13: 6 clients', constructed.length, 6)
+  clock += 600001
+  const result13 = await ssh.execRemote(HOST_A, 'x7')
+  eq('case 13: after window', result13, 'ok\n')
+  eq('case 13: 7 clients', constructed.length, 7)
+
+  // 13b. closeHost resets health: failConnect, 3 failures (clock += 60001 between each),
+  //      immediate 4th call rejects BACKOFF; await ssh.closeHost(HOST_A); behavior = {}; next call resolves without advancing the clock.
+  await ssh.closeAll(); reset()
+  clock = 1e6
+  behavior = { failConnect: true }
+  for (let i = 0; i < 3; i++) {
+    await rejects(`case 13b: fail ${i+1}`, ssh.execRemote(HOST_A, `y${i}`), /ECONNREFUSED/)
+    if (i < 2) clock += 60001 // not after the third: the 4th call must land inside its backoff
+  }
+  const refusing = await rejects('case 13b: 4th BACKOFF', ssh.execRemote(HOST_A, 'y3'), /./)
+  ok('case 13b: is BACKOFF', refusing && refusing.code === 'BACKOFF')
+  await ssh.closeHost(HOST_A)
+  behavior = {}
+  const result13b = await ssh.execRemote(HOST_A, 'y4')
+  eq('case 13b: after reset', result13b, 'ok\n')
+
+  // 14. openStream chunking: behavior = { rules: [{ match: 'chunky', chunks: ['ab', 'c\nde', 'f\r\n', 'tail'], code: 0 }] };
+  //     lines = []; closes = []; h = await ssh.openStream(HOST_A, 'chunky', { onLine: l => lines.push(l), onClose: (c, e) => closes.push(c) });
+  //     await sleep(10); eq lines joined by '|' === 'abc|def'; eq closes.length 1; eq closes[0] 0; h.close(); h.close(); await sleep(10); eq closes.length 1.
+  await ssh.closeAll(); reset()
+  behavior = { rules: [{ match: 'chunky', chunks: ['ab', 'c\nde', 'f\r\n', 'tail'], code: 0 }] }
+  const lines = []
+  const closes = []
+  const h = await ssh.openStream(HOST_A, 'chunky', { onLine: l => lines.push(l), onClose: (c, e) => closes.push(c) })
+  await sleep(10)
+  eq('case 14: lines joined', lines.join('|'), 'abc|def')
+  eq('case 14: onClose fires once', closes.length, 1)
+  eq('case 14: close code', closes[0], 0)
+  h.close()
+  h.close()
+  await sleep(10)
+  eq('case 14: close idempotent', closes.length, 1)
+
+  // 14b. openStream close on a hanging stream: rule { match: 'hangs', hang: true }; open, h.close(); h.close();
+  //      await sleep(10); eq closes.length 1; the fake stream (constructed[0]'s last exec stream — record streams in the fake as `this.streams`)
+  //      has closed === true.
+  await ssh.closeAll(); reset()
+  behavior = { rules: [{ match: 'hangs', hang: true }] }
+  const closes14b = []
+  const h14b = await ssh.openStream(HOST_A, 'hangs', { onLine: () => {}, onClose: (c, e) => closes14b.push(c) })
+  h14b.close()
+  h14b.close()
+  await sleep(10)
+  eq('case 14b: onClose fires once', closes14b.length, 1)
+
+  // 14c. openStream open timeout: rule { match: 'frozen', noCallback: true };
+  //      openStream(HOST_A, 'frozen', { onLine(){}, onClose(){}, openTimeoutMs: 50 }) rejects /timed out/;
+  //      await sleep(5); constructed[0].ended === true.
+  await ssh.closeAll(); reset()
+  behavior = { rules: [{ match: 'frozen', noCallback: true }] }
+  const timeoutErr = await rejects('case 14c: timeout', ssh.openStream(HOST_A, 'frozen', { onLine: () => {}, onClose: () => {}, openTimeoutMs: 50 }), /timed out/)
+  ok('case 14c: timeout error', timeoutErr !== null)
+  await sleep(5)
+  ok('case 14c: connection dropped', constructed[0].ended === true)
+
+  // 15. stats: execRemote 'cmd1' then 'cmd2' -> s = stats()['u@10.0.0.3:22']:
+  //     connects 1, readies 1, channels 2, connected true. Then behavior hang rule,
+  //     execRemote('hang', { timeoutMs: 30 }) rejects /timed out/ -> commandTimeouts 1, connected still true.
+  //     Then noCallback rule, execRemote('frozen', { timeoutMs: 30 }) rejects -> openTimeouts 1; await sleep(5); connected false.
+  // Counters are lifetime totals per host (closeAll keeps them), so this case uses a host no earlier case touched.
+  await ssh.closeAll(); reset()
+  behavior = {}
+  await ssh.execRemote(HOST_C, 'cmd1')
+  await ssh.execRemote(HOST_C, 'cmd2')
+  let stats15 = ssh.stats()
+  const s15 = stats15['u@10.0.0.3:22']
+  eq('case 15: connects', s15.connects, 1)
+  eq('case 15: readies', s15.readies, 1)
+  eq('case 15: channels', s15.channels, 2)
+  eq('case 15: connected', s15.connected, true)
+
+  behavior.rules = [{ match: 'hang', hang: true }] // the live client holds this object; replacing it would not reach it
+  await rejects('case 15: timeout', ssh.execRemote(HOST_C, 'hang', { timeoutMs: 30 }), /timed out/)
+  stats15 = ssh.stats()
+  const s15b = stats15['u@10.0.0.3:22']
+  eq('case 15: commandTimeouts', s15b.commandTimeouts, 1)
+  eq('case 15: connected after timeout', s15b.connected, true)
+
+  behavior.rules = [{ match: 'frozen', noCallback: true }]
+  await rejects('case 15: frozen', ssh.execRemote(HOST_C, 'frozen', { timeoutMs: 30 }), /timed out/)
+  stats15 = ssh.stats()
+  const s15c = stats15['u@10.0.0.3:22']
+  eq('case 15: openTimeouts', s15c.openTimeouts, 1)
+  await sleep(5)
+  eq('case 15: disconnected after frozen', ssh.stats()['u@10.0.0.3:22'].connected, false)
+
+  ssh._setNow(() => Date.now())
+
   await ssh.closeAll()
   console.log(`${pass} passed, ${fail} failed`)
   process.exit(fail ? 1 : 0)
 }
 
+// A test awaiting a promise nothing will settle drains the loop and exits 0, which run.js would count as a pass.
+process.on('beforeExit', () => { console.log('  FAIL harness hung: event loop drained before the test finished'); process.exit(1) })
 main().catch((err) => { console.log('  FAIL harness crashed:', err && err.stack || err); process.exit(1) })

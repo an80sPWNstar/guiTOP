@@ -80,4 +80,6 @@ async function main() {
   process.exit(fail ? 1 : 0)
 }
 
+// A test awaiting a promise nothing will settle drains the loop and exits 0, which run.js would count as a pass.
+process.on('beforeExit', () => { console.log('  FAIL harness hung: event loop drained before the test finished'); process.exit(1) })
 main().catch((err) => { console.log('  FAIL harness crashed:', err && err.stack || err); process.exit(1) })

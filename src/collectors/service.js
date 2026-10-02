@@ -4,21 +4,19 @@
 const os = require('os')
 const { fetchLocal, GPU_CMD, PROC_CMD } = require('./nvidia-smi')
 const { parseGpus, parseProcesses, parsePs } = require('./parse')
-const ssh = require('./ssh')
+const remote = require('./remote')
 const vendor = require('./vendor')
 const hostStats = require('./host-stats')
 const amdSmi = require('./amd-smi')
 const amdSysfs = require('./amd-sysfs')
 const amdNames = require('./amd-names')
 const mock = require('./mock')
+const { PS_EO_CMD } = require('./remote-commands')
 
 // Windows WDDM: nvidia-smi reports per-process used_memory as [N/A]. Perf
 // counters (GPU Process Memory) do have it — fill the gap on the local host.
 const winGpuMem = process.platform === 'win32' ? require('./win-gpu-mem') : null
 const winProcStats = process.platform === 'win32' ? require('./win-proc-stats') : null
-
-// Fixed string (no dynamic input) — per-process user/cpu/mem/uptime on Linux.
-const PS_EO_CMD = 'ps -eo pid=,user:32=,pcpu=,pmem=,etimes='
 
 const DEFAULT_INTERVAL = 1000
 const REMOTE_INTERVAL = 2000
@@ -76,9 +74,9 @@ async function pollLocalNvidia() {
 
 async function pollRemoteNvidia(hostConfig) {
   const [gpuCsv, procCsv, psOut] = await Promise.all([
-    ssh.execRemote(hostConfig, GPU_CMD),
-    ssh.execRemote(hostConfig, PROC_CMD),
-    ssh.execRemote(hostConfig, PS_EO_CMD).catch(() => ''),
+    remote.execRemote(hostConfig, GPU_CMD),
+    remote.execRemote(hostConfig, PROC_CMD),
+    remote.execRemote(hostConfig, PS_EO_CMD).catch(() => ''),
   ])
   const gpus = parseGpus(gpuCsv)
   const uuidMap = {}
@@ -111,10 +109,10 @@ function attachPsStats(processes, psOut) {
 
 async function pollRemoteAmdSmi(hostConfig) {
   const [staticOut, metricOut, procOut, psOut] = await Promise.all([
-    ssh.execRemote(hostConfig, amdSmi.STATIC_CMD),
-    ssh.execRemote(hostConfig, amdSmi.METRIC_CMD),
-    ssh.execRemote(hostConfig, amdSmi.PROC_CMD).catch(() => ''),
-    ssh.execRemote(hostConfig, PS_EO_CMD).catch(() => ''),
+    remote.execRemote(hostConfig, amdSmi.STATIC_CMD),
+    remote.execRemote(hostConfig, amdSmi.METRIC_CMD),
+    remote.execRemote(hostConfig, amdSmi.PROC_CMD).catch(() => ''),
+    remote.execRemote(hostConfig, PS_EO_CMD).catch(() => ''),
   ])
   const gpus = amdSmi.parseAmdSmi(staticOut, metricOut)
   const uuidMap = {}
@@ -124,7 +122,7 @@ async function pollRemoteAmdSmi(hostConfig) {
 }
 
 async function pollRemoteRocmSmi(hostConfig) {
-  const out = await ssh.execRemote(hostConfig, amdSmi.ROCM_CMD)
+  const out = await remote.execRemote(hostConfig, amdSmi.ROCM_CMD)
   return { gpus: amdSmi.parseRocmSmi(out), processes: [] }
 }
 
@@ -132,7 +130,7 @@ async function pollRemoteRocmSmi(hostConfig) {
 // by device ID. enrich() fills those in from rocm-smi, once per host, and is a
 // no-op when every card already has a real name.
 async function pollRemoteAmdSysfs(hostConfig) {
-  const out = await ssh.execRemote(hostConfig, amdSysfs.SYSFS_CMD)
+  const out = await remote.execRemote(hostConfig, amdSysfs.SYSFS_CMD)
   return amdNames.enrich(hostConfig, { gpus: amdSysfs.parseSysfs(out), processes: [] })
 }
 
@@ -308,7 +306,7 @@ function startHost(hostEntry, onData, { interval, useMock = false, mockVendor = 
     stop() {
       running = false
       loop.stop()
-      if (!hostEntry.local) ssh.closeHost(hostEntry).catch(() => {})
+      if (!hostEntry.local) remote.closeHost(hostEntry).catch(() => {})
     },
   }
 }
@@ -322,4 +320,4 @@ function startAll(hosts, onData, opts) {
 }
 
 // mergeBackendResults, planSlots and pollSlot are exported for tests only.
-module.exports = { startHost, startAll, mergeBackendResults, planSlots, pollSlot, runLoop, DEFAULT_INTERVAL, REMOTE_INTERVAL }
+module.exports = { startHost, startAll, mergeBackendResults, planSlots, pollSlot, runLoop, DEFAULT_INTERVAL, REMOTE_INTERVAL, PS_EO_CMD }
