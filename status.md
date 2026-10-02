@@ -18,7 +18,7 @@ _Last updated: 2026-10-02. Read this + `CLAUDE.md` once at session start._
 3. In `hosts.json` for Family-LLM add `"transport": "agent"` and `"agentToken": "<token>"` (guiTOP encrypts it on next launch).
 4. Verify with `/debug/remote`: the agent section answers ok and the ssh section shows no new connects for that host.
 
-**Open items:** single-instance lock, tray pause toggle, startup jitter, a dedicated low-privilege guitop user on .70.
+**Open items:** single-instance lock, tray pause toggle ("stop remote polling"), startup delay plus jitter so a reboot of Bryan-DT does not poll every host at once, a dedicated low-privilege guitop user on .70, SSH key auth instead of the stored password, and remote-side guards on .70 (`MaxStartups` and per-user session limits in sshd). The last four come from the findings report and none of these is built.
 
 **Known cosmetic issue:** `/debug/remote` keeps lastError after recovery (the first attempt's "Timed out while waiting for handshake" still shows while streaming). The first connect at app start timed out in the handshake (`Timed out while waiting for handshake`) on 2 of 3 launches (dev run and installed 0.3.15; the unpacked build connected first time). The 2 s backoff absorbs it, so it costs one retry, not a storm, but it is unexplained; worth a look (startup event-loop load, or the ready timeout) before #3.
 
@@ -27,7 +27,7 @@ _Last updated: 2026-10-02. Read this + `CLAUDE.md` once at session start._
 - `pkill -f PATTERN` over ssh matches its own remote command line and kills the session; bracket the first character.
 - A bare `wait` in a script that backgrounded a server waits for the server too and hangs.
 - The worktree's `npm ci` did not download the Electron binary; the dev app was launched with `E:\vs_code_projects\guiTOP\node_modules\electron\dist\electron.exe`.
-- The `E:\vs_code_projects\guiTOP` checkout (branch `fix/ssh-connection-pool`) still holds the original pool fix as uncommitted changes; it is now redundant with `265e80d`.
+- The `E:\vs_code_projects\guiTOP` checkout is back on `main`; its uncommitted copy of the pool fix was verified byte-identical to `265e80d`/`507e238` and cleared. Its untracked `HANDOFF.md` and `docs/` stay local on purpose: the findings report names production services on .70, and this repo is public.
 
 ## 2026-08-11 (PR #2 merged, v0.3.14 released)
 
