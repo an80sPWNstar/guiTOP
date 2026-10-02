@@ -20,7 +20,7 @@ _Last updated: 2026-10-02. Read this + `CLAUDE.md` once at session start._
 
 **Open items:** single-instance lock, tray pause toggle, startup jitter, a dedicated low-privilege guitop user on .70.
 
-**Known cosmetic issue:** `/debug/remote` keeps lastError after recovery (the first attempt's "Timed out while waiting for handshake" still shows while streaming). The one handshake timeout at app start is unexplained; it has not recurred.
+**Known cosmetic issue:** `/debug/remote` keeps lastError after recovery (the first attempt's "Timed out while waiting for handshake" still shows while streaming). The first connect at app start timed out in the handshake (`Timed out while waiting for handshake`) on 2 of 3 launches (dev run and installed 0.3.15; the unpacked build connected first time). The 2 s backoff absorbs it, so it costs one retry, not a storm, but it is unexplained; worth a look (startup event-loop load, or the ready timeout) before #3.
 
 **Lessons:**
 - A hung async test let Node exit 0 and `test/run.js` counted it as a pass; every async test file now fails on a drained event loop (`process.on('beforeExit')`). With fake timers, `await flush()` after each `advance()` that opens a channel.
