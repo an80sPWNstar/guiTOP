@@ -188,6 +188,23 @@ async function main() {
   eq('non-array config loads no hosts', notArr.hosts.length, 0)
   eq('non-array config is reported', notArr.invalid.length, 1)
 
+  // 14. loadSavedHosts keeps an unreadable hosts.json instead of letting a save erase it.
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'guitop-hosts-'))
+  const missing = hostConfig.loadSavedHosts(dir)
+  ok('missing hosts.json is not an error', missing.entries === null && missing.error === null)
+  fs.writeFileSync(path.join(dir, 'hosts.json'), '[{"label":"a","host":"h","username":"u"},]')
+  const broken = hostConfig.loadSavedHosts(dir)
+  ok('trailing comma loads nothing', broken.entries === null)
+  ok('trailing comma is reported', /not valid JSON/.test(broken.error))
+  ok('broken file is copied aside', fs.existsSync(path.join(dir, 'hosts.json.bad')))
+  eq('copy is byte-identical', fs.readFileSync(path.join(dir, 'hosts.json.bad'), 'utf8'), '[{"label":"a","host":"h","username":"u"},]')
+  fs.writeFileSync(path.join(dir, 'hosts.json'), '{"label":"a"}')
+  ok('object instead of list is reported', /not a list/.test(hostConfig.loadSavedHosts(dir).error))
+  fs.writeFileSync(path.join(dir, 'hosts.json'), '[{"label":"a","host":"h","username":"u"}]')
+  const good = hostConfig.loadSavedHosts(dir)
+  ok('valid list loads', Array.isArray(good.entries) && good.entries.length === 1 && good.error === null)
+  fs.rmSync(dir, { recursive: true, force: true })
+
   // 11. Keys are only included when present.
   const testHost5 = { label: 'test5', host: '10.0.0.5', port: 22, username: 'user', password: 'pass' }
   const validated5 = hostConfig.validate(testHost5, [])

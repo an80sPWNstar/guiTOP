@@ -206,7 +206,11 @@ function createWindow() {
   })
 
   win.webContents.once('did-finish-load', () => {
-    const saved = loadSavedHosts(app.getPath('userData'))
+    const { entries: saved, error: savedError } = loadSavedHosts(app.getPath('userData'))
+    if (savedError) {
+      hostErrors.push(savedError)
+      console.error(`guiTOP: ${savedError}`)
+    }
     const initial = (saved && saved.length > 0) ? saved : DEFAULT_HOSTS
 
     // Always refresh local host label to current hostname
@@ -218,7 +222,7 @@ function createWindow() {
     const { hosts, invalid } = partitionHosts(initial)
     for (const bad of invalid) {
       const name = bad.raw && typeof bad.raw.label === 'string' ? `"${bad.raw.label}" ` : ''
-      hostErrors.push(`${name}(${bad.error})`)
+      hostErrors.push(`hosts.json skipped ${name}(${bad.error})`)
       console.error(`guiTOP: skipped host ${name}(${bad.error})`)
     }
 
@@ -361,6 +365,7 @@ ipcMain.handle('cswap-add-token', (_e, { token, email, alias, slot } = {}) => ne
 }))
 
 ipcMain.handle('get-hosts', () => activeHosts.map(h => h.label))
+ipcMain.handle('get-host-errors', () => hostErrors)
 
 ipcMain.handle('add-host', async (_e, config) => {
   const { password, agentToken, acceptFingerprint, _fingerprint, ...hostData } = config

@@ -705,18 +705,22 @@ window.guiTOP.onHostList((hosts) => {
   renderActive()
 })
 
-// Entries hosts.json holds but that failed validation. They are not polled, and are
-// shown here because a skipped host would otherwise just be missing with no reason.
-window.guiTOP.onHostErrors((errors) => {
-  if (errors.length === 0) {
+// Problems with hosts.json: entries that failed validation, or a file that could not be
+// used at all. Shown here because a skipped host would otherwise just be missing.
+function showHostErrors(errors) {
+  if (!Array.isArray(errors) || errors.length === 0) {
     statusWarn.hidden = true
     statusWarn.textContent = ''
+    statusWarn.title = ''
   } else {
     statusWarn.hidden = false
-    statusWarn.textContent = `hosts.json: skipped ${errors.join(' · ')}`
+    statusWarn.textContent = errors.join(' · ')
     statusWarn.title = errors.join('\n')
   }
-})
+}
+window.guiTOP.onHostErrors(showHostErrors)
+// The push happens once at startup; View > Reload would otherwise lose it.
+window.guiTOP.getHostErrors().then(showHostErrors)
 
 // Fetch host list on load (in case the event was missed)
 window.guiTOP.getHosts().then((hosts) => {

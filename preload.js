@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('guiTOP', {
   onHostErrors: (cb) => ipcRenderer.on('host-errors', (_e, errors) => cb(errors)),
   onOpenSettings: (cb) => ipcRenderer.on('open-settings', () => cb()),
   getHosts: () => ipcRenderer.invoke('get-hosts'),
+  getHostErrors: () => ipcRenderer.invoke('get-host-errors'),
   addHost: (config) => ipcRenderer.invoke('add-host', config),
   removeHost: (label) => ipcRenderer.invoke('remove-host', label),
   editHost: (label, config) => ipcRenderer.invoke('edit-host', label, config),

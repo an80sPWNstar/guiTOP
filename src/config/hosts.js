@@ -83,11 +83,34 @@ function knownHostsPath(userDataDir) {
   return path.join(userDataDir, 'known_hosts.json')
 }
 
+// A missing file is normal (first run). A file that exists but cannot be used is not:
+// startup falls back to the local host, and the next save would overwrite the user's
+// hand-edited list, so a copy is kept beside it before anything else happens.
 function loadSavedHosts(userDataDir) {
+  const file = savedHostsPath(userDataDir)
+  let text
   try {
-    const raw = fs.readFileSync(savedHostsPath(userDataDir), 'utf8')
-    return JSON.parse(raw)
-  } catch { return null }
+    text = fs.readFileSync(file, 'utf8')
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      return { entries: null, error: null }
+    }
+    return { entries: null, error: `hosts.json could not be read (${err.message})` }
+  }
+  let parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch (err) {
+    const problem = `hosts.json is not valid JSON (${err.message})`
+    try { fs.copyFileSync(file, file + '.bad') } catch (_) {}
+    return { entries: null, error: `${problem}; a copy was kept as hosts.json.bad` }
+  }
+  if (!Array.isArray(parsed)) {
+    const problem = 'hosts.json is not a list of hosts'
+    try { fs.copyFileSync(file, file + '.bad') } catch (_) {}
+    return { entries: null, error: `${problem}; a copy was kept as hosts.json.bad` }
+  }
+  return { entries: parsed, error: null }
 }
 
 function saveHostList(userDataDir, rawEntries) {
