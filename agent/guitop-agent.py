@@ -124,6 +124,11 @@ class WorkerThread(threading.Thread):
     with self.lock:
       self.last_request_at = now
 
+      # A run already past the timeout will not finish in the next 3s. Waiting anyway pins the
+      # client's one kept-alive socket and delays every other command for this host behind it.
+      if self.started_at is not None and (now - self.started_at) > self.run_timeout:
+        wait_first = False
+
       if self.result is None and wait_first:
         event = threading.Event()
         self.waiters.append(event)

@@ -294,6 +294,7 @@ async function main() {
       }
     } finally {
       await stopAgent()
+      fs.rmSync(tmpDir, { recursive: true, force: true })
     }
     console.log(`${pass} passed, ${fail} failed`)
     process.exit(fail ? 1 : 0)
