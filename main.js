@@ -602,7 +602,22 @@ function buildMenu() {
   Menu.setApplicationMenu(menu)
 }
 
+// A second copy would open its own logins to every host, doubling the load the 10-02 flood came
+// from, and die on the dev port already in use. It hands over to the running copy instead.
+const gotInstanceLock = app.requestSingleInstanceLock()
+if (!gotInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (!win || win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+  })
+}
+
 app.whenReady().then(() => {
+  if (!gotInstanceLock) return
   createWindow()
   createTray()
 
